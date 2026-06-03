@@ -22,8 +22,12 @@ TicketCoach 是一个基于大语言模型的客服培训辅助工具，构成�
 | POST | `/api/batch?n=N` | 批量生成 N 条 + 统计 |
 | POST | `/api/chat` | 对练一轮：传 `actor_prompt` + 对话历史，返回客户下一句 |
 | POST | `/api/evaluate` | 传 `script` + 对练记录，按评分维度给客服打分 |
+| POST | `/api/script-from-ticket` | 导入真实工单(粘贴/结构化)→ 生成剧本(+质检) |
+| POST | `/api/batch-scripts` | 上传文件(JSON/JSONL/CSV/文本)批量生成剧本，导出用 |
 | GET  | `/api/options` | 前端下拉框选项 |
 | GET  | `/api/health` | 健康检查 |
+
+> `/api/script-from-ticket` 与 `/api/batch-scripts` 面向**已有真实工单**的团队：跳过 AI 造工单，直接用真实工单生成可导出的结构化剧本。
 
 ## 本地运行
 
