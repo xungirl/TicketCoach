@@ -12,13 +12,14 @@ from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query, Request, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from core.pipeline import (
     run_pipeline,
     chat_reply,
+    chat_reply_stream,
     evaluate_session,
     ticket_to_script,
     review_script,
@@ -264,6 +265,24 @@ def chat(body: ChatRequest):
         return JSONResponse(status_code=500, content={"error": f"LLM 调用失败: {str(e)}"})
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": f"对话失败: {str(e)}"})
+
+
+@app.post("/api/chat-stream", dependencies=[Depends(require_access)])
+def chat_stream(body: ChatRequest):
+    """
+    Streaming roleplay turn: the customer's reply is streamed token-by-token
+    (text/plain chunks) for a real-time typing effect. Same inputs as /api/chat.
+    """
+    history = [t.model_dump() for t in body.history]
+
+    def generate_stream():
+        try:
+            for piece in chat_reply_stream(body.actor_prompt, history):
+                yield piece
+        except Exception as e:
+            yield f"\n[对话出错：{str(e)}]"
+
+    return StreamingResponse(generate_stream(), media_type="text/plain; charset=utf-8")
 
 
 @app.post("/api/evaluate", dependencies=[Depends(require_access)])

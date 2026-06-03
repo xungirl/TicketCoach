@@ -306,6 +306,35 @@ def chat_reply(actor_prompt: str, history: list) -> str:
     return _raw_chat(messages, json_mode=False, temperature=0.9).strip()
 
 
+def chat_reply_stream(actor_prompt: str, history: list):
+    """
+    Streaming version of chat_reply: yields the customer's reply piece by piece
+    as the model generates it (for a real-time, typing-style roleplay UX).
+    """
+    system = CHAT_SYSTEM_WRAPPER.format(actor_prompt=actor_prompt)
+    messages = [{"role": "system", "content": system}]
+    for turn in history:
+        role = "assistant" if turn.get("role") == "customer" else "user"
+        messages.append({"role": role, "content": turn.get("text", "")})
+    if not history:
+        messages.append({
+            "role": "user",
+            "content": "（系统提示：对练现在开始，请你作为这位客户主动说出第一句话，开启对话。只说客户会说的话。）",
+        })
+
+    client = get_client()
+    model = _get_model()
+    stream = client.chat.completions.create(
+        model=model, messages=messages, temperature=0.9, stream=True,
+    )
+    for chunk in stream:
+        if not chunk.choices:
+            continue
+        delta = chunk.choices[0].delta
+        if delta and getattr(delta, "content", None):
+            yield delta.content
+
+
 def _format_transcript(transcript: list) -> str:
     """Render a roleplay transcript as readable text for the evaluator."""
     lines = []

@@ -635,7 +635,7 @@ async function fetchCustomerReply() {
   setChatBusy(true);
   appendTyping();
   try {
-    const res = await apiFetch("/api/chat", {
+    const res = await apiFetch("/api/chat-stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -643,20 +643,46 @@ async function fetchCustomerReply() {
         history: roleplayHistory,
       }),
     });
-    const data = await res.json();
-    removeTyping();
-    if (!res.ok || data.error) {
-      showError(data.error || `对话请求失败 (HTTP ${res.status})`);
+
+    if (!res.ok) {
+      removeTyping();
+      let msg = `对话请求失败 (HTTP ${res.status})`;
+      try { const d = await res.json(); msg = d.error || d.detail || msg; } catch (_) {}
+      showError(msg);
       return;
     }
-    roleplayHistory.push({ role: "customer", text: data.reply });
-    appendChatBubble("customer", data.reply);
+
+    // Stream the reply token-by-token into a fresh customer bubble.
+    removeTyping();
+    const bubbleEl = createStreamingBubble();
+    const box = document.getElementById("roleplay-messages");
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let full = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      full += decoder.decode(value, { stream: true });
+      bubbleEl.textContent = full;
+      box.scrollTop = box.scrollHeight;
+    }
+    roleplayHistory.push({ role: "customer", text: full });
   } catch (e) {
     removeTyping();
     showError(`对话出错：${e.message}`);
   } finally {
     setChatBusy(false);
   }
+}
+
+function createStreamingBubble() {
+  const box = document.getElementById("roleplay-messages");
+  const wrap = document.createElement("div");
+  wrap.className = "bubble-wrap customer";
+  wrap.innerHTML = `<span class="bubble-role">客户（AI）</span><div class="bubble customer"></div>`;
+  box.appendChild(wrap);
+  box.scrollTop = box.scrollHeight;
+  return wrap.querySelector(".bubble");
 }
 
 function appendChatBubble(role, text) {
