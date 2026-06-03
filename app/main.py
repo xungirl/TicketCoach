@@ -20,6 +20,9 @@ from core.pipeline import (
     run_pipeline,
     chat_reply,
     evaluate_session,
+    ticket_to_script,
+    review_script,
+    coerce_ticket,
     BUSINESS_TYPES,
     EMOTIONS,
     ISSUE_CATEGORIES,
@@ -74,6 +77,18 @@ class ChatRequest(BaseModel):
 class EvaluateRequest(BaseModel):
     script: dict
     transcript: list[ChatTurn]
+
+
+class ScriptFromTicketRequest(BaseModel):
+    ticket_text: Optional[str] = None   # raw pasted ticket text
+    ticket: Optional[dict] = None       # or an already-structured ticket
+    review: bool = True                 # also run quality check
+
+
+class BatchScriptsRequest(BaseModel):
+    content: str                        # raw file content (frontend reads the file)
+    format: str = "auto"                # json | jsonl | csv | auto
+    review: bool = False                # batch defaults to skip review (faster/cheaper)
 
 
 # ---------------------------------------------------------------------------
@@ -269,6 +284,107 @@ def evaluate(body: EvaluateRequest):
         return JSONResponse(status_code=500, content={"error": f"LLM 调用失败: {str(e)}"})
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": f"评分失败: {str(e)}"})
+
+
+# ---------------------------------------------------------------------------
+# Real-ticket ingestion → script (+ export-ready output)
+# ---------------------------------------------------------------------------
+
+@app.post("/api/script-from-ticket", dependencies=[Depends(require_access)])
+def script_from_ticket(body: ScriptFromTicketRequest):
+    """
+    Generate a training script from a REAL ticket (pasted text or structured).
+    Returns {"ticket": <normalized>, "script": ..., "review": <optional>}.
+    For teams that already have real tickets (skips the AI ticket-generation step).
+    """
+    enforce_quota(1)
+    try:
+        if body.ticket:
+            ticket = coerce_ticket(body.ticket)
+        elif body.ticket_text and body.ticket_text.strip():
+            ticket = coerce_ticket(body.ticket_text.strip())
+        else:
+            return JSONResponse(status_code=400, content={"error": "请提供工单文本或工单数据"})
+
+        script = ticket_to_script(ticket)
+        result = {"ticket": ticket, "script": script}
+        if body.review:
+            result["review"] = review_script(ticket, script)
+        return JSONResponse(content=result)
+    except ValueError as e:
+        return JSONResponse(status_code=500, content={"error": f"解析失败: {str(e)}"})
+    except RuntimeError as e:
+        return JSONResponse(status_code=500, content={"error": f"LLM 调用失败: {str(e)}"})
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": f"生成失败: {str(e)}"})
+
+
+def _parse_tickets_payload(content: str, fmt: str) -> list:
+    """Parse uploaded file content into a list of ticket items (dict or str)."""
+    import csv
+    import io
+
+    content = content.strip()
+    if not content:
+        return []
+
+    fmt = (fmt or "auto").lower()
+    if fmt == "auto":
+        if content[:1] in "[{":
+            fmt = "jsonl" if ("\n" in content and content[:1] == "{") else "json"
+        else:
+            fmt = "csv" if ("," in content.splitlines()[0]) else "text"
+
+    if fmt == "json":
+        data = json.loads(content)
+        return data if isinstance(data, list) else [data]
+    if fmt == "jsonl":
+        return [json.loads(ln) for ln in content.splitlines() if ln.strip()]
+    if fmt == "csv":
+        return list(csv.DictReader(io.StringIO(content)))
+    # plain text: split on blank lines, each block is one ticket
+    return [b.strip() for b in content.split("\n\n") if b.strip()]
+
+
+@app.post("/api/batch-scripts", dependencies=[Depends(require_access)])
+def batch_scripts(body: BatchScriptsRequest):
+    """
+    Batch-generate scripts from an uploaded file of real tickets.
+    Accepts JSON array / JSONL / CSV / plain text. Capped to protect API spend.
+    Returns {"results": [{ticket, script, review?}], "count": n, "errors": [...]}.
+    """
+    MAX_ITEMS = 10
+    try:
+        items = _parse_tickets_payload(body.content, body.format)
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"error": f"文件解析失败: {str(e)}"})
+
+    if not items:
+        return JSONResponse(status_code=400, content={"error": "文件为空或无法识别工单"})
+    if len(items) > MAX_ITEMS:
+        items = items[:MAX_ITEMS]
+
+    enforce_quota(len(items))
+
+    results, errors = [], []
+    for i, item in enumerate(items):
+        try:
+            ticket = coerce_ticket(item)
+            script = ticket_to_script(ticket)
+            entry = {"ticket": ticket, "script": script}
+            if body.review:
+                entry["review"] = review_script(ticket, script)
+            results.append(entry)
+        except Exception as e:
+            errors.append({"index": i + 1, "error": str(e)})
+
+    return JSONResponse(content={
+        "count": len(results),
+        "total_input": len(items),
+        "capped_at": MAX_ITEMS,
+        "results": results,
+        "errors": errors,
+    })
 
 
 # ---------------------------------------------------------------------------

@@ -153,6 +153,41 @@
     </div>
   </section>
 
+  <!-- Import Real Tickets → Scripts (for teams with real tickets) -->
+  <section class="import-section">
+    <div class="import-inner">
+      <h2 class="import-title">📥 导入真实工单 → 生成剧本（团队用）</h2>
+      <p class="import-sub">已有真实工单？粘贴或上传文件，直接生成结构化剧本并导出 JSON（跳过 AI 造工单这一步）。</p>
+
+      <div class="import-grid">
+        <div class="import-card">
+          <h3 class="import-card-title">单条粘贴</h3>
+          <textarea id="single-ticket-input" rows="6"
+            placeholder="粘贴一条真实工单 / 对话文本…&#10;例：&#10;客户：我的ECS连不上了&#10;客服：请提供实例ID…"></textarea>
+          <div class="import-card-row">
+            <label class="import-check"><input type="checkbox" id="single-review" checked> 同时质检</label>
+            <button class="btn-primary" id="btn-single" onclick="handleSingleTicket()">生成剧本</button>
+          </div>
+        </div>
+
+        <div class="import-card">
+          <h3 class="import-card-title">批量文件（最多 10 条）</h3>
+          <input type="file" id="batch-file" accept=".json,.jsonl,.csv,.txt" class="import-file" />
+          <p class="import-hint">支持 JSON 数组 / JSONL / CSV / 纯文本（空行分隔每条）</p>
+          <div class="import-card-row">
+            <span></span>
+            <button class="btn-secondary" id="btn-batch-file" onclick="handleBatchFile()">批量生成剧本</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="import-loading" style="display:none;" class="batch-loading-msg">
+        <div class="spinner spinner-sm"></div><span id="import-loading-text">生成中…</span>
+      </div>
+      <div id="import-result" style="display:none;"></div>
+    </div>
+  </section>
+
   <!-- Roleplay Chat Overlay -->
   <div class="roleplay-overlay" id="roleplay-overlay" style="display:none;">
     <div class="roleplay-box">

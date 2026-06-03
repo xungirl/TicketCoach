@@ -28,6 +28,8 @@ from core.prompts import (
     CHAT_SYSTEM_WRAPPER,
     EVALUATE_SYSTEM_PROMPT,
     EVALUATE_USER_TEMPLATE,
+    NORMALIZE_TICKET_SYSTEM_PROMPT,
+    NORMALIZE_TICKET_USER_TEMPLATE,
 )
 
 # Load .env file from project root
@@ -227,6 +229,50 @@ def review_script(ticket: dict, script: dict) -> dict:
     score = review.get("overall_score", "N/A")
     print(f"[pipeline] Step 3 done. overall_score={score}")
     return review
+
+
+# ---------------------------------------------------------------------------
+# Real-ticket ingestion (for teams that already have real tickets)
+# ---------------------------------------------------------------------------
+
+TICKET_KEYS = ["ticket_id", "business_type", "customer_profile", "channel",
+               "dialogue", "resolution", "tags"]
+
+
+def _fill_ticket_defaults(ticket: dict) -> dict:
+    """Ensure a ticket dict has all expected keys with sane default types."""
+    out = dict(ticket)
+    out.setdefault("ticket_id", "")
+    out.setdefault("business_type", "")
+    out.setdefault("customer_profile", "")
+    out.setdefault("channel", "")
+    out.setdefault("dialogue", [])
+    out.setdefault("resolution", "")
+    out.setdefault("tags", [])
+    return out
+
+
+def normalize_ticket_from_text(raw_ticket: str) -> dict:
+    """
+    Turn a real ticket's raw content (free text or messy fields) into our
+    structured ticket JSON, without fabricating missing info.
+    """
+    user_msg = NORMALIZE_TICKET_USER_TEMPLATE.format(raw_ticket=raw_ticket)
+    ticket = call_llm(NORMALIZE_TICKET_SYSTEM_PROMPT, user_msg, json_mode=True)
+    return _fill_ticket_defaults(ticket)
+
+
+def coerce_ticket(item) -> dict:
+    """
+    Accept a ticket in any form (dict already in our shape, dict with other
+    fields, or raw string) and return a normalized ticket dict.
+    """
+    if isinstance(item, dict) and isinstance(item.get("dialogue"), list) and item.get("dialogue"):
+        # Already looks like our structured ticket — use as-is.
+        return _fill_ticket_defaults(item)
+    # Otherwise stringify and let the LLM structure it.
+    text = item if isinstance(item, str) else json.dumps(item, ensure_ascii=False, indent=2)
+    return normalize_ticket_from_text(text)
 
 
 # ---------------------------------------------------------------------------

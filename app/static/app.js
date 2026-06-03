@@ -466,6 +466,132 @@ function toggleBatchItem(bodyId) {
 }
 
 // ---------------------------------------------------------------------------
+// Import real tickets → scripts, then export (machine-readable JSON)
+// ---------------------------------------------------------------------------
+
+let lastSingleResult = null;
+let lastBatchResults = [];
+
+function importBusy(busy, text) {
+  const el = document.getElementById("import-loading");
+  if (text) document.getElementById("import-loading-text").textContent = text;
+  el.style.display = busy ? "flex" : "none";
+  document.getElementById("btn-single").disabled = busy;
+  document.getElementById("btn-batch-file").disabled = busy;
+}
+
+function downloadBlob(filename, text, mime) {
+  const blob = new Blob([text], { type: mime || "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+}
+
+async function handleSingleTicket() {
+  hideError();
+  const text = document.getElementById("single-ticket-input").value.trim();
+  if (!text) { showError("请先粘贴一条工单文本"); return; }
+  const review = document.getElementById("single-review").checked;
+
+  importBusy(true, "正在归一化工单并生成剧本…（约 30-60 秒）");
+  document.getElementById("import-result").style.display = "none";
+  try {
+    const res = await apiFetch("/api/script-from-ticket", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ticket_text: text, review }),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      showError(data.error || data.detail || `生成失败 (HTTP ${res.status})`);
+      return;
+    }
+    lastSingleResult = data;
+    renderImportSingle(data);
+  } catch (e) {
+    showError(`出错：${e.message}`);
+  } finally {
+    importBusy(false);
+  }
+}
+
+function renderImportSingle(data) {
+  const el = document.getElementById("import-result");
+  el.style.display = "block";
+  const reviewNote = data.review ? `（质检 ${data.review.overall_score} 分）` : "";
+  el.innerHTML = `
+    <div class="import-result-head">✅ 已生成 1 份剧本：<strong>${esc(data.script.title)}</strong> ${reviewNote}</div>
+    <div class="import-actions">
+      <button class="btn-primary" onclick="downloadSingle('script')">下载剧本 JSON</button>
+      <button class="btn-secondary" onclick="downloadSingle('full')">下载完整 JSON（工单+剧本+质检）</button>
+    </div>`;
+}
+
+function downloadSingle(kind) {
+  if (!lastSingleResult) return;
+  const obj = kind === "script" ? lastSingleResult.script : lastSingleResult;
+  downloadBlob(`script-${Date.now()}.json`, JSON.stringify(obj, null, 2));
+}
+
+async function handleBatchFile() {
+  hideError();
+  const f = document.getElementById("batch-file").files[0];
+  if (!f) { showError("请先选择一个文件"); return; }
+  const ext = (f.name.split(".").pop() || "").toLowerCase();
+  const fmt = ["json", "jsonl", "csv"].includes(ext) ? ext : "auto";
+  const content = await f.text();
+
+  importBusy(true, "批量生成中…（每条约 20-40 秒，最多 10 条）");
+  document.getElementById("import-result").style.display = "none";
+  try {
+    const res = await apiFetch("/api/batch-scripts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content, format: fmt, review: false }),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      showError(data.error || data.detail || `批量生成失败 (HTTP ${res.status})`);
+      return;
+    }
+    lastBatchResults = data.results || [];
+    renderImportBatch(data);
+  } catch (e) {
+    showError(`出错：${e.message}`);
+  } finally {
+    importBusy(false);
+  }
+}
+
+function renderImportBatch(data) {
+  const el = document.getElementById("import-result");
+  el.style.display = "block";
+  const capNote = data.total_input > data.capped_at
+    ? `（输入 ${data.total_input} 条，本次只处理前 ${data.capped_at} 条）` : "";
+  const errNote = data.errors && data.errors.length ? `，${data.errors.length} 条失败` : "";
+  el.innerHTML = `
+    <div class="import-result-head">✅ 成功生成 ${data.count} 份剧本${capNote}${errNote}</div>
+    <div class="import-actions">
+      <button class="btn-primary" onclick="downloadBatch('json')">下载全部 JSON（数组）</button>
+      <button class="btn-secondary" onclick="downloadBatch('jsonl')">下载 JSONL（每行一条）</button>
+    </div>`;
+}
+
+function downloadBatch(kind) {
+  if (!lastBatchResults.length) return;
+  if (kind === "jsonl") {
+    const lines = lastBatchResults.map(r => JSON.stringify(r)).join("\n");
+    downloadBlob(`scripts-${Date.now()}.jsonl`, lines, "application/x-ndjson");
+  } else {
+    downloadBlob(`scripts-${Date.now()}.json`, JSON.stringify(lastBatchResults, null, 2));
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Roleplay chat engine (live sparring)
 // ---------------------------------------------------------------------------
 

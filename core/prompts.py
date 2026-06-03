@@ -223,3 +223,36 @@ EVALUATE_USER_TEMPLATE = """请评估下面这段对练中【客服学员(agent)
 {transcript}
 
 请严格按剧本的 scoring_criteria 维度打分，直接输出 JSON 评估结果，不要有任何其他文字。"""
+
+
+# ---------------------------------------------------------------------------
+# Normalize a REAL ticket (free text / arbitrary fields) into our ticket schema
+# ---------------------------------------------------------------------------
+# Used by the "upload real ticket → generate script" flow (for teams that
+# already have real tickets). Does NOT fabricate; only structures what's given.
+NORMALIZE_TICKET_SYSTEM_PROMPT = """你是一名数据整理助手。用户会给你一条【真实】客服工单的原始内容（可能是纯文本对话、也可能是字段杂乱的记录）。请把它整理成统一的结构化 JSON。
+
+【输出要求】
+- 只输出合法 JSON，不得包含 markdown 代码块，不得有任何解释文字
+- 严格符合下方 Schema
+- 【重要】不要编造原文没有的信息。原文缺失的字段：字符串留空字符串、数组留空数组；ticket_id 缺失时按 TK-YYYYMMDD-XXXX 生成一个占位编号即可
+- 尽量识别对话中谁是客户、谁是客服，拆分到 dialogue；保留原话，不要改写润色
+
+【JSON Schema】
+{
+  "ticket_id": "string",
+  "business_type": "string，能判断就填，否则留空",
+  "customer_profile": "string，能从原文归纳就填，否则留空",
+  "channel": "string，能判断就填，否则留空",
+  "dialogue": [
+    {"role": "customer 或 agent", "text": "string，保留原话"}
+  ],
+  "resolution": "string，最终处理结果，没有就留空",
+  "tags": ["string，能归纳就填，否则空数组"]
+}"""
+
+NORMALIZE_TICKET_USER_TEMPLATE = """请把下面这条真实工单整理成结构化 JSON（不要编造缺失信息）：
+
+{raw_ticket}
+
+直接输出 JSON，不要任何其他文字。"""
