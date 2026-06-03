@@ -68,19 +68,40 @@ python -m core.pipeline
 
 ---
 
-## Render 部署
+## Google Cloud Run 部署（推荐，自带公网 HTTPS 链接）
 
-1. Fork 本仓库到 GitHub
-2. 在 [Render](https://render.com) 创建新的 **Web Service**
-3. 配置：
-   - **Build Command**：`pip install -r requirements.txt`
-   - **Start Command**：`uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-4. 在 Render 环境变量中添加：
-   - `LLM_API_KEY`
-   - `LLM_BASE_URL`
-   - `LLM_MODEL`
+前提：已安装并登录 `gcloud`，项目已开通结算（billing）。本机无需安装 Docker（Cloud Run 在云端构建）。
 
----
+```bash
+# 1) 设定项目与区域
+gcloud config set project <你的项目ID>
+gcloud config set run/region us-central1
+
+# 2) 从源码构建并部署（首次会提示启用 Cloud Run / Cloud Build 等 API，输入 y）
+gcloud run deploy ticketcoach \
+  --source . \
+  --allow-unauthenticated \
+  --timeout 900 \
+  --memory 512Mi
+
+# 3) 配置环境变量（key 不进代码/git）
+gcloud run services update ticketcoach \
+  --set-env-vars LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1,LLM_MODEL=qwen3-max,LLM_API_KEY=<你的key>,ACCESS_PASSWORD=<你设的访问口令>,LLM_TIMEOUT=180
+```
+
+部署完成后终端会打印一个 `https://ticketcoach-xxxx.<区域>.run.app` 链接，发给朋友即可访问；
+首次打开调用接口时会要求输入你设置的 `ACCESS_PASSWORD`。
+
+> 安全提示：
+> - `ACCESS_PASSWORD` 防止别人用你的链接消耗 token；务必设置。
+> - 第 3 步把 key 写在命令行会留在 shell 历史里，介意的话改用 Cloud Console（Cloud Run → 服务 → 编辑并部署新修订版本 → 变量与密钥）手动填。
+> - `--timeout 900` 给慢模型和批量生成留足时间（qwen3-max 单条约 60s，批量 5 条约 5 分钟）。
+
+## Render 部署（备选）
+
+1. Fork 仓库 → 在 [Render](https://render.com) 新建 **Web Service**
+2. Build：`pip install -r requirements.txt`；Start：`uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+3. 环境变量配 `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` / `ACCESS_PASSWORD`
 
 ## 架构图
 

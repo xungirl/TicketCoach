@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Query, Request, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -75,6 +75,19 @@ class EvaluateRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Access control
+# ---------------------------------------------------------------------------
+# If ACCESS_PASSWORD is set (e.g. in production), the expensive LLM endpoints
+# require a matching X-Access-Token header. If it's unset (e.g. local dev),
+# access is open. This protects your API tokens from anyone who finds the URL.
+
+def require_access(x_access_token: Optional[str] = Header(default=None)):
+    expected = os.environ.get("ACCESS_PASSWORD")
+    if expected and x_access_token != expected:
+        raise HTTPException(status_code=401, detail="访问口令错误或缺失")
+
+
+# ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
 
@@ -98,7 +111,7 @@ async def get_options():
     }
 
 
-@app.post("/api/generate")
+@app.post("/api/generate", dependencies=[Depends(require_access)])
 def generate(body: GenerateRequest):
     """
     Run the 3-step pipeline to generate ticket, script, and review.
@@ -131,8 +144,8 @@ def generate(body: GenerateRequest):
         )
 
 
-@app.post("/api/batch")
-def batch_generate(n: int = Query(default=3, ge=1, le=20)):
+@app.post("/api/batch", dependencies=[Depends(require_access)])
+def batch_generate(n: int = Query(default=3, ge=1, le=5)):
     """
     Run n pipelines sequentially and return results + basic stats.
     Stats include: avg_score, business_type distribution, difficulty distribution.
@@ -187,7 +200,7 @@ def batch_generate(n: int = Query(default=3, ge=1, le=20)):
 # Roleplay chat engine + session evaluation
 # ---------------------------------------------------------------------------
 
-@app.post("/api/chat")
+@app.post("/api/chat", dependencies=[Depends(require_access)])
 def chat(body: ChatRequest):
     """
     One turn of live roleplay. The LLM replies as the customer, driven by the
@@ -204,7 +217,7 @@ def chat(body: ChatRequest):
         return JSONResponse(status_code=500, content={"error": f"对话失败: {str(e)}"})
 
 
-@app.post("/api/evaluate")
+@app.post("/api/evaluate", dependencies=[Depends(require_access)])
 def evaluate(body: EvaluateRequest):
     """
     Score the trainee's (agent's) performance after a roleplay session, using

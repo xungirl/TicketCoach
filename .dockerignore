@@ -1,0 +1,12 @@
+# Keep the build context small and never ship secrets.
+.env
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.git/
+.gitignore
+*.log
+.DS_Store
+.idea/
+.vscode/

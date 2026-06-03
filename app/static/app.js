@@ -53,6 +53,29 @@ function setLoading(visible, text) {
   document.getElementById("btn-generate").disabled = visible;
 }
 
+/**
+ * Wrapper around fetch for the protected API endpoints.
+ * Attaches the stored access token; on 401, prompts for the password,
+ * stores it, and retries once. (No password needed when the server has
+ * ACCESS_PASSWORD unset, e.g. local dev.)
+ */
+async function apiFetch(url, options = {}) {
+  const headers = Object.assign({}, options.headers || {});
+  const token = localStorage.getItem("tc_access_token");
+  if (token) headers["X-Access-Token"] = token;
+
+  let res = await fetch(url, Object.assign({}, options, { headers }));
+  if (res.status === 401) {
+    const pw = prompt("请输入访问口令：");
+    if (pw) {
+      localStorage.setItem("tc_access_token", pw);
+      headers["X-Access-Token"] = pw;
+      res = await fetch(url, Object.assign({}, options, { headers }));
+    }
+  }
+  return res;
+}
+
 // ---------------------------------------------------------------------------
 // Load dropdown options from backend
 // ---------------------------------------------------------------------------
@@ -98,7 +121,7 @@ async function handleGenerate() {
   };
 
   try {
-    const res = await fetch("/api/generate", {
+    const res = await apiFetch("/api/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -317,7 +340,7 @@ async function handleBatch() {
   document.getElementById("btn-batch").disabled = true;
 
   try {
-    const res = await fetch(`/api/batch?n=${n}`, { method: "POST" });
+    const res = await apiFetch(`/api/batch?n=${n}`, { method: "POST" });
     const data = await res.json();
 
     if (!res.ok || data.error) {
@@ -486,7 +509,7 @@ async function fetchCustomerReply() {
   setChatBusy(true);
   appendTyping();
   try {
-    const res = await fetch("/api/chat", {
+    const res = await apiFetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -561,7 +584,7 @@ async function endAndEvaluate() {
   document.getElementById("eval-overlay").style.display = "flex";
 
   try {
-    const res = await fetch("/api/evaluate", {
+    const res = await apiFetch("/api/evaluate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ script: currentScript, transcript: roleplayHistory }),
