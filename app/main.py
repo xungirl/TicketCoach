@@ -164,8 +164,17 @@ def enforce_quota(n: int = 1):
 # ---------------------------------------------------------------------------
 
 @app.get("/")
-async def serve_index():
-    """Serve the main frontend page."""
+async def serve_landing():
+    """Serve the marketing/landing page."""
+    landing = STATIC_DIR / "landing.html"
+    if not landing.exists():
+        raise HTTPException(status_code=404, detail="landing.html not found")
+    return FileResponse(str(landing))
+
+
+@app.get("/app")
+async def serve_app():
+    """Serve the functional app page."""
     index_path = STATIC_DIR / "index.html"
     if not index_path.exists():
         raise HTTPException(status_code=404, detail="index.html not found")

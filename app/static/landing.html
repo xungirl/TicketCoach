@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TicketCoach — 阿里云客服 AI 陪练系统</title>
+  <script>document.documentElement.classList.add('js');</script>
+  <style>
+    :root {
+      --brand: linear-gradient(120deg, #6366f1 0%, #8b5cf6 45%, #d946ef 100%);
+      --ink: #0f172a;
+      --muted: #64748b;
+      --line: rgba(148, 163, 184, 0.25);
+      --font: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: var(--font);
+      color: var(--ink);
+      background: #0b1020;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+    a { text-decoration: none; color: inherit; }
+
+    /* animated gradient backdrop */
+    .bg {
+      position: fixed; inset: 0; z-index: -2;
+      background:
+        radial-gradient(1100px 600px at 15% -5%, rgba(139,92,246,0.45), transparent 60%),
+        radial-gradient(900px 600px at 95% 10%, rgba(217,70,239,0.32), transparent 55%),
+        radial-gradient(900px 700px at 50% 110%, rgba(99,102,241,0.40), transparent 60%),
+        #0b1020;
+    }
+    .bg::after {
+      content: ""; position: absolute; inset: 0;
+      background-image: radial-gradient(rgba(255,255,255,0.05) 1px, transparent 1px);
+      background-size: 26px 26px;
+      mask-image: linear-gradient(180deg, #000, transparent 75%);
+    }
+
+    .wrap { max-width: 1080px; margin: 0 auto; padding: 0 1.25rem; }
+
+    /* nav */
+    nav {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 1.1rem 0;
+    }
+    .brand { display: flex; align-items: center; gap: 0.5rem; color: #fff; font-weight: 800; font-size: 1.2rem; }
+    .brand .dot { font-size: 1.4rem; }
+    .nav-cta {
+      color: #fff; font-size: 0.85rem; font-weight: 600;
+      border: 1px solid rgba(255,255,255,0.25); border-radius: 999px;
+      padding: 0.45rem 1rem; transition: background .2s;
+    }
+    .nav-cta:hover { background: rgba(255,255,255,0.12); }
+
+    /* hero */
+    .hero { text-align: center; padding: clamp(2.5rem, 8vw, 6rem) 0 2.5rem; color: #fff; }
+    .pill {
+      display: inline-block; font-size: 0.8rem; color: #c7d2fe;
+      background: rgba(99,102,241,0.18); border: 1px solid rgba(129,140,248,0.4);
+      padding: 0.35rem 0.9rem; border-radius: 999px; margin-bottom: 1.4rem;
+    }
+    .hero h1 {
+      font-size: clamp(1.7rem, 6vw, 4rem); line-height: 1.14; font-weight: 900;
+      letter-spacing: -0.5px; margin-bottom: 1.1rem;
+      overflow-wrap: break-word;
+    }
+    .hero h1 .grad {
+      background: var(--brand); -webkit-background-clip: text; background-clip: text; color: transparent;
+    }
+    .hero p {
+      font-size: clamp(0.98rem, 2.5vw, 1.2rem); color: #cbd5e1;
+      max-width: 640px; margin: 0 auto 2rem; line-height: 1.7;
+    }
+    .cta-row { display: flex; gap: 0.9rem; justify-content: center; flex-wrap: wrap; }
+    .cta {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      font-size: 1.05rem; font-weight: 800; color: #fff;
+      background: var(--brand); background-size: 160% 160%;
+      padding: 0.95rem 2.2rem; border-radius: 999px;
+      box-shadow: 0 10px 30px rgba(124,58,237,0.5);
+      transition: transform .2s, box-shadow .2s, background-position .4s;
+    }
+    .cta:hover { transform: translateY(-2px); background-position: 100% 0; box-shadow: 0 16px 40px rgba(124,58,237,0.6); }
+    .cta-ghost {
+      display: inline-flex; align-items: center; color: #e2e8f0; font-weight: 600;
+      border: 1px solid rgba(255,255,255,0.25); border-radius: 999px; padding: 0.95rem 1.6rem;
+      transition: background .2s;
+    }
+    .cta-ghost:hover { background: rgba(255,255,255,0.1); }
+
+    /* product preview */
+    .preview { margin: 3rem auto 0; max-width: 940px; padding: 0 1rem; }
+    .preview img {
+      width: 100%; border-radius: 14px; display: block;
+      border: 1px solid rgba(255,255,255,0.12);
+      box-shadow: 0 30px 80px rgba(0,0,0,0.55);
+    }
+
+    /* features */
+    .section { padding: clamp(3rem, 9vw, 5.5rem) 0; }
+    .section h2 { color: #fff; text-align: center; font-size: clamp(1.5rem, 5vw, 2.2rem); font-weight: 900; margin-bottom: 0.6rem; }
+    .section .lead { color: #94a3b8; text-align: center; margin-bottom: 2.6rem; font-size: 0.98rem; }
+    .grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1rem;
+    }
+    .card {
+      background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 16px; padding: 1.4rem; color: #e2e8f0;
+      backdrop-filter: blur(8px); transition: transform .2s, border-color .2s, background .2s;
+    }
+    .card:hover { transform: translateY(-4px); border-color: rgba(139,92,246,0.5); background: rgba(255,255,255,0.08); }
+    .card .ico { font-size: 1.8rem; margin-bottom: 0.7rem; }
+    .card h3 { font-size: 1.05rem; color: #fff; margin-bottom: 0.4rem; font-weight: 700; }
+    .card p { font-size: 0.88rem; color: #94a3b8; line-height: 1.6; }
+
+    /* steps */
+    .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; }
+    .step { text-align: center; color: #cbd5e1; padding: 1rem; }
+    .step .num {
+      width: 44px; height: 44px; margin: 0 auto 0.7rem; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--brand); color: #fff; font-weight: 800; font-size: 1.1rem;
+      box-shadow: 0 6px 18px rgba(124,58,237,0.45);
+    }
+    .step h4 { color: #fff; font-size: 0.98rem; margin-bottom: 0.3rem; }
+    .step p { font-size: 0.82rem; color: #94a3b8; }
+
+    /* bottom cta */
+    .final { text-align: center; padding: clamp(3rem, 9vw, 5rem) 0; }
+    .final h2 { color: #fff; font-size: clamp(1.6rem, 5vw, 2.4rem); font-weight: 900; margin-bottom: 1.6rem; }
+
+    footer { color: #64748b; text-align: center; padding: 2rem 1rem; font-size: 0.78rem; border-top: 1px solid rgba(255,255,255,0.08); }
+
+    /* --- ambient animations (CSS) --- */
+    .blob { position: fixed; z-index: -1; border-radius: 50%; filter: blur(70px); opacity: .45; pointer-events: none; }
+    .blob.b1 { width: 360px; height: 360px; background: #7c3aed; top: -80px; left: -60px; animation: drift1 16s ease-in-out infinite; }
+    .blob.b2 { width: 320px; height: 320px; background: #d946ef; top: 18%; right: -80px; animation: drift2 19s ease-in-out infinite; }
+    .blob.b3 { width: 380px; height: 380px; background: #6366f1; bottom: -120px; left: 28%; animation: drift1 22s ease-in-out infinite reverse; }
+    @keyframes drift1 { 0%,100%{transform:translate(0,0) scale(1);} 50%{transform:translate(50px,40px) scale(1.12);} }
+    @keyframes drift2 { 0%,100%{transform:translate(0,0) scale(1);} 50%{transform:translate(-40px,50px) scale(1.1);} }
+
+    .cta { position: relative; }
+    .cta::after { content:""; position:absolute; inset:0; border-radius:999px; box-shadow:0 0 0 0 rgba(139,92,246,.55); animation: pulse 2.6s infinite; }
+    @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(139,92,246,.5);} 70%{box-shadow:0 0 0 20px rgba(139,92,246,0);} 100%{box-shadow:0 0 0 0 rgba(139,92,246,0);} }
+
+    .preview img { animation: floaty 6s ease-in-out infinite; }
+    @keyframes floaty { 0%,100%{transform:translateY(0);} 50%{transform:translateY(-12px);} }
+
+    /* hero entrance (CSS — robust, works without JS) */
+    .reveal { opacity: 0; animation: rise .8s cubic-bezier(.2,.7,.2,1) forwards; }
+    @keyframes rise { from { opacity: 0; transform: translateY(22px); } to { opacity: 1; transform: none; } }
+    .d1 { animation-delay: .08s; } .d2 { animation-delay: .18s; } .d3 { animation-delay: .28s; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .blob, .cta::after, .preview img { animation: none; }
+      .reveal { opacity: 1; animation: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="bg"></div>
+  <div class="blob b1"></div>
+  <div class="blob b2"></div>
+  <div class="blob b3"></div>
+
+  <div class="wrap">
+    <nav>
+      <div class="brand"><span class="dot">🎭</span> TicketCoach</div>
+      <a class="nav-cta" href="/app">进入应用 →</a>
+    </nav>
+
+    <header class="hero">
+      <span class="pill reveal">🚀 多步 Agent · 实时对练 · 一键部署</span>
+      <h1 class="reveal d1">阿里云客服 <span class="grad">AI 陪练</span> 系统</h1>
+      <p class="reveal d2">把客服工单自动变成对练剧本，再让你与 AI 扮演的客户实战对练、即时评分。
+        生成剧本 → 实战对练 → AI 打分，一条龙闭环。</p>
+      <div class="cta-row reveal d3">
+        <a class="cta" href="/app">即刻体验 →</a>
+        <a class="cta-ghost" href="#features">了解功能</a>
+      </div>
+    </header>
+
+    <div class="preview">
+      <img src="/static/preview-main.png" alt="TicketCoach 界面预览" />
+    </div>
+
+    <section class="section" id="features">
+      <h2>核心能力</h2>
+      <p class="lead">用大语言模型，把一条工单跑成一整套培训资产</p>
+      <div class="grid">
+        <div class="card"><div class="ico">🤖</div><h3>多步 Agent 流水线</h3><p>造工单 → 提炼剧本 → 质检打分，多次模型调用串成闭环，低分自动重生成。</p></div>
+        <div class="card"><div class="ico">🎭</div><h3>真人实战对练</h3><p>你扮客服，AI 用剧本人设扮难缠客户，逐字流式回复，情绪随你的应对升降。</p></div>
+        <div class="card"><div class="ico">📊</div><h3>AI 自动评分</h3><p>对练结束按评分维度打分，指出做得好 / 可改进 / 没接住的挑战点。</p></div>
+        <div class="card"><div class="ico">📚</div><h3>剧本库 · 秒取</h3><p>预生成存库，点击 0 等待载入——企业级"离线生成、在线秒取"思路。</p></div>
+        <div class="card"><div class="ico">📥</div><h3>导入真实工单</h3><p>已有真实工单？粘贴或上传文件，直接生成剧本并导出 JSON，对接团队系统。</p></div>
+        <div class="card"><div class="ico">🤝</div><h3>AI 示范教程</h3><p>两个 AI 自动演一遍标准对话，给新人当"标准答案"模板。</p></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>三步上手</h2>
+      <p class="lead">点开就能用，无需配置</p>
+      <div class="steps">
+        <div class="step"><div class="num">1</div><h4>选场景 / 取库</h4><p>选业务参数生成，或从剧本库秒取一份</p></div>
+        <div class="step"><div class="num">2</div><h4>开始对练</h4><p>与 AI 客户实战，或看 AI 示范</p></div>
+        <div class="step"><div class="num">3</div><h4>看评分</h4><p>按维度打分 + 改进建议</p></div>
+      </div>
+    </section>
+
+    <div class="preview">
+      <img src="/static/preview-chat.png" alt="实战对练界面预览" />
+    </div>
+
+    <section class="final">
+      <h2>准备好开练了吗？</h2>
+      <a class="cta" href="/app">即刻体验 →</a>
+    </section>
+  </div>
+
+  <footer>TicketCoach · 基于通义千问 qwen3-max 的客服培训陪练 · 仅供学习演示</footer>
+
+  <!-- GSAP animations (CDN; free incl. ScrollTrigger) -->
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js"></script>
+  <script>
+    // Content is visible by default; GSAP only enhances it. If GSAP fails to
+    // load or errors, the page still shows everything (animations are optional).
+    try {
+      if (window.gsap) {
+        gsap.registerPlugin(ScrollTrigger);
+
+        // Feature cards reveal on scroll, in cascading waves.
+        gsap.utils.toArray(".card").forEach((el, i) => {
+          gsap.from(el, { opacity: 0, y: 28, duration: 0.7, ease: "power2.out", delay: (i % 3) * 0.08,
+            scrollTrigger: { trigger: el, start: "top 88%" } });
+        });
+
+        // Steps reveal on scroll.
+        gsap.utils.toArray(".step").forEach((el, i) => {
+          gsap.from(el, { opacity: 0, y: 28, duration: 0.7, ease: "power2.out", delay: i * 0.1,
+            scrollTrigger: { trigger: el, start: "top 88%" } });
+        });
+
+        // Product previews fade in (transform left to the CSS float).
+        gsap.utils.toArray(".preview").forEach((el) => {
+          gsap.from(el, { opacity: 0, duration: 0.9, ease: "power2.out",
+            scrollTrigger: { trigger: el, start: "top 92%" } });
+        });
+      }
+    } catch (e) { /* animations are optional; content stays visible */ }
+  </script>
+</body>
+</html>
