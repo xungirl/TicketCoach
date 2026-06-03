@@ -80,6 +80,17 @@
     <button class="error-close" onclick="hideError()">✕</button>
   </div>
 
+  <!-- Script Library (instant retrieval) -->
+  <section class="library-section">
+    <div class="library-inner">
+      <div class="library-head">
+        <h2 class="library-title">📚 剧本库 · 秒取</h2>
+        <span class="library-sub">企业级思路：预生成存库，点击 0 等待载入（不调用模型）</span>
+      </div>
+      <div class="library-row" id="library-row"><span class="library-empty">加载中…</span></div>
+    </div>
+  </section>
+
   <!-- Main 3-Column Layout -->
   <main class="main-grid" id="main-grid">
 
@@ -228,8 +239,8 @@
 
   <script src="/static/app.js"></script>
   <script>
-    // Load dropdown options on page load
-    window.addEventListener('DOMContentLoaded', loadOptions);
+    // Load dropdown options + script library on page load
+    window.addEventListener('DOMContentLoaded', () => { loadOptions(); loadLibrary(); });
   </script>
 </body>
 </html>

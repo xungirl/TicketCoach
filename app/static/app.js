@@ -10,6 +10,7 @@
 // Roleplay state: the script currently loaded, and the live transcript.
 let currentScript = null;
 let roleplayHistory = []; // [{role: "customer"|"agent", text: string}]
+let lastShown = null;     // last {ticket, script, review} shown in the 3 columns
 
 /** Escape user/model-provided text before injecting into innerHTML. */
 function esc(value) {
@@ -134,6 +135,7 @@ async function handleGenerate() {
     }
 
     currentScript = data.script;
+    lastShown = data;
     renderTicket(data.ticket);
     renderScript(data.script);
     renderReview(data.review);
@@ -248,7 +250,8 @@ function renderScript(script) {
     ? `<div class="roleplay-btn-row">
          <button class="start-roleplay-btn" onclick="startRoleplay()">🎭 我来对练</button>
          <button class="start-roleplay-btn demo" onclick="startAutoRoleplay()">🤖 看 AI 示范（教程）</button>
-       </div>`
+       </div>
+       <button class="save-lib-btn" onclick="saveToLibrary()">💾 存入剧本库</button>`
     : "";
 
   el.innerHTML = startBtns + cards.join("");
@@ -591,6 +594,81 @@ function downloadBatch(kind) {
     downloadBlob(`scripts-${Date.now()}.jsonl`, lines, "application/x-ndjson");
   } else {
     downloadBlob(`scripts-${Date.now()}.json`, JSON.stringify(lastBatchResults, null, 2));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Script library (instant retrieval — enterprise "pre-generate, serve fast")
+// ---------------------------------------------------------------------------
+
+async function loadLibrary() {
+  try {
+    const res = await fetch("/api/library");
+    if (!res.ok) return;
+    const data = await res.json();
+    renderLibrary(data.items || []);
+  } catch (_) { /* non-fatal */ }
+}
+
+function renderLibrary(items) {
+  const row = document.getElementById("library-row");
+  if (!items.length) {
+    row.innerHTML = `<span class="library-empty">库为空（生成后点「💾 存入剧本库」）</span>`;
+    return;
+  }
+  row.innerHTML = items.map(it => {
+    const lvl = scoreLevel100(Number(it.score) || 0);
+    return `<button class="library-card" onclick="openLibraryItem(${it.id})">
+      <span class="library-card-meta">${esc(it.business_type || "")}${it.difficulty ? " · 难度" + esc(it.difficulty) : ""}</span>
+      <span class="library-card-title">${esc(it.title || "未命名剧本")}</span>
+      <span class="library-card-score dim-score-badge ${lvl}">质检 ${Math.round(it.score || 0)}</span>
+    </button>`;
+  }).join("");
+}
+
+async function openLibraryItem(id) {
+  hideError();
+  try {
+    const res = await fetch(`/api/library/${id}`);
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      showError(data.error || data.detail || `载入失败 (HTTP ${res.status})`);
+      return;
+    }
+    // Instant — no LLM call. Render straight into the three columns.
+    currentScript = data.script;
+    lastShown = data;
+    renderTicket(data.ticket);
+    renderScript(data.script);
+    if (data.review) renderReview(data.review);
+    const grid = document.getElementById("main-grid");
+    window.scrollTo({ top: grid.offsetTop - 70, behavior: "smooth" });
+  } catch (e) {
+    showError(`载入出错：${e.message}`);
+  }
+}
+
+async function saveToLibrary() {
+  if (!lastShown || !lastShown.script) { showError("没有可保存的剧本"); return; }
+  try {
+    const res = await apiFetch("/api/library", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(lastShown),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      showError(data.error || data.detail || `保存失败 (HTTP ${res.status})`);
+      return;
+    }
+    loadLibrary();
+    const note = document.createElement("div");
+    note.className = "save-toast";
+    note.textContent = "✅ 已存入剧本库";
+    document.body.appendChild(note);
+    setTimeout(() => note.remove(), 1800);
+  } catch (e) {
+    showError(`保存出错：${e.message}`);
   }
 }
 

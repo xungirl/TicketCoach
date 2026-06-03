@@ -54,6 +54,24 @@ app.add_middleware(
 STATIC_DIR = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
+# ---------------------------------------------------------------------------
+# Pre-generated script library (enterprise pattern: generate offline, serve
+# instantly). Seeded from data/library.json; in-memory, append via POST.
+# ---------------------------------------------------------------------------
+LIBRARY_PATH = Path(__file__).parent.parent / "data" / "library.json"
+
+
+def _load_library() -> list:
+    try:
+        with open(LIBRARY_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+LIBRARY = _load_library()
+
 
 # ---------------------------------------------------------------------------
 # Request / Response models
@@ -428,6 +446,46 @@ def batch_scripts(body: BatchScriptsRequest):
         "results": results,
         "errors": errors,
     })
+
+
+# ---------------------------------------------------------------------------
+# Script library (instant retrieval — no LLM call)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/library")
+def library_list():
+    """List library entries as lightweight summaries (instant, no LLM)."""
+    items = []
+    for i, entry in enumerate(LIBRARY):
+        script = entry.get("script", {})
+        ticket = entry.get("ticket", {})
+        review = entry.get("review", {})
+        params = entry.get("params", {})
+        items.append({
+            "id": i,
+            "title": script.get("title", "未命名剧本"),
+            "business_type": ticket.get("business_type") or params.get("business_type", ""),
+            "difficulty": params.get("difficulty", ""),
+            "score": review.get("overall_score", 0),
+        })
+    return {"items": items, "count": len(items)}
+
+
+@app.get("/api/library/{idx}")
+def library_get(idx: int):
+    """Fetch one full library entry instantly (no LLM call)."""
+    if idx < 0 or idx >= len(LIBRARY):
+        return JSONResponse(status_code=404, content={"error": "剧本不存在"})
+    return JSONResponse(content=LIBRARY[idx])
+
+
+@app.post("/api/library", dependencies=[Depends(require_access)])
+def library_add(entry: dict):
+    """Append a generated {ticket, script, review} to the in-memory library."""
+    if not entry.get("script"):
+        return JSONResponse(status_code=400, content={"error": "缺少 script 字段"})
+    LIBRARY.append(entry)
+    return {"id": len(LIBRARY) - 1, "count": len(LIBRARY)}
 
 
 # ---------------------------------------------------------------------------
