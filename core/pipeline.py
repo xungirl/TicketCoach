@@ -48,7 +48,9 @@ def get_client() -> openai.OpenAI:
     return openai.OpenAI(
         api_key=api_key,
         base_url=base_url,
-        timeout=60.0,
+        # Stronger models (e.g. qwen-max / reasoning models) need more headroom
+        # for long generations; configurable via LLM_TIMEOUT env var.
+        timeout=float(os.environ.get("LLM_TIMEOUT", "180")),
     )
 
 
