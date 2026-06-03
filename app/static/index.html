@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TicketCoach — 客服培训剧本生成器</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="site-header">
+    <div class="header-inner">
+      <div class="logo">
+        <span class="logo-icon">🎭</span>
+        <span class="logo-text">TicketCoach</span>
+        <span class="logo-sub">客服培训剧本生成器</span>
+      </div>
+      <div class="header-meta">AI-powered · 三步流水线 · 自动生成</div>
+    </div>
+  </header>
+
+  <!-- Control Panel -->
+  <section class="control-panel">
+    <div class="control-inner">
+      <h2 class="control-title">生成参数</h2>
+      <div class="control-row">
+        <div class="control-group">
+          <label for="sel-business">业务类型</label>
+          <select id="sel-business">
+            <option value="">随机</option>
+          </select>
+        </div>
+        <div class="control-group">
+          <label for="sel-emotion">情绪基调</label>
+          <select id="sel-emotion">
+            <option value="">随机</option>
+            <option value="平静">平静</option>
+            <option value="不满">不满</option>
+            <option value="愤怒">愤怒</option>
+          </select>
+        </div>
+        <div class="control-group">
+          <label for="sel-issue">问题类别</label>
+          <select id="sel-issue">
+            <option value="">随机</option>
+          </select>
+        </div>
+        <div class="control-group">
+          <label for="sel-difficulty">处理难度</label>
+          <select id="sel-difficulty">
+            <option value="">随机</option>
+            <option value="低">低</option>
+            <option value="中">中</option>
+            <option value="高">高</option>
+          </select>
+        </div>
+        <div class="control-actions">
+          <button class="btn-primary" id="btn-generate" onclick="handleGenerate()">
+            <span class="btn-icon">⚡</span> 生成剧本
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Loading Overlay -->
+  <div class="loading-overlay" id="loading-overlay" style="display:none;">
+    <div class="loading-box">
+      <div class="spinner"></div>
+      <p class="loading-text" id="loading-text">正在生成中，请稍候…</p>
+      <p class="loading-sub">三步 LLM 流水线运行中，通常需要 30-60 秒</p>
+    </div>
+  </div>
+
+  <!-- Error Banner -->
+  <div class="error-banner" id="error-banner" style="display:none;">
+    <span class="error-icon">⚠️</span>
+    <span class="error-msg" id="error-msg"></span>
+    <button class="error-close" onclick="hideError()">✕</button>
+  </div>
+
+  <!-- Main 3-Column Layout -->
+  <main class="main-grid" id="main-grid">
+
+    <!-- Column 1: Ticket -->
+    <section class="col col-ticket" id="col-ticket">
+      <div class="col-header">
+        <span class="col-num">Step 1</span>
+        <h3 class="col-title">原始工单</h3>
+        <span class="col-tag">Dirty Data</span>
+      </div>
+      <div class="col-body" id="ticket-body">
+        <div class="placeholder-msg">点击"生成剧本"开始</div>
+      </div>
+    </section>
+
+    <!-- Column 2: Script -->
+    <section class="col col-script" id="col-script">
+      <div class="col-header">
+        <span class="col-num">Step 2</span>
+        <h3 class="col-title">培训剧本</h3>
+        <span class="col-tag">Training Script</span>
+      </div>
+      <div class="col-body" id="script-body">
+        <div class="placeholder-msg">等待生成…</div>
+      </div>
+    </section>
+
+    <!-- Column 3: Review -->
+    <section class="col col-review" id="col-review">
+      <div class="col-header">
+        <span class="col-num">Step 3</span>
+        <h3 class="col-title">质量评审</h3>
+        <span class="col-tag">QA Review</span>
+      </div>
+      <div class="col-body" id="review-body">
+        <div class="placeholder-msg">等待生成…</div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Batch Generation Section -->
+  <section class="batch-section">
+    <div class="batch-inner">
+      <div class="batch-header">
+        <h2 class="batch-title">批量生成</h2>
+        <div class="batch-controls">
+          <label for="batch-n">生成数量</label>
+          <select id="batch-n">
+            <option value="3">3 条</option>
+            <option value="5" selected>5 条</option>
+            <option value="8">8 条</option>
+            <option value="10">10 条</option>
+          </select>
+          <button class="btn-secondary" id="btn-batch" onclick="handleBatch()">
+            <span class="btn-icon">📊</span> 批量生成
+          </button>
+        </div>
+      </div>
+
+      <div id="batch-result" style="display:none;">
+        <!-- Stats summary -->
+        <div class="stats-summary" id="stats-summary"></div>
+        <!-- Batch items list -->
+        <div class="batch-list" id="batch-list"></div>
+      </div>
+
+      <div id="batch-loading" style="display:none;" class="batch-loading-msg">
+        <div class="spinner spinner-sm"></div>
+        <span id="batch-loading-text">批量生成中…</span>
+      </div>
+    </div>
+  </section>
+
+  <footer class="site-footer">
+    <p>TicketCoach · 基于大语言模型的客服培训剧本自动生成工具 · Powered by OpenAI-compatible API</p>
+  </footer>
+
+  <script src="/static/app.js"></script>
+  <script>
+    // Load dropdown options on page load
+    window.addEventListener('DOMContentLoaded', loadOptions);
+  </script>
+</body>
+</html>
