@@ -20,6 +20,7 @@ from core.pipeline import (
     run_pipeline,
     chat_reply,
     chat_reply_stream,
+    agent_reply_stream,
     evaluate_session,
     ticket_to_script,
     review_script,
@@ -78,6 +79,11 @@ class ChatRequest(BaseModel):
 class EvaluateRequest(BaseModel):
     script: dict
     transcript: list[ChatTurn]
+
+
+class AgentStreamRequest(BaseModel):
+    script: dict
+    history: list[ChatTurn] = []
 
 
 class ScriptFromTicketRequest(BaseModel):
@@ -281,6 +287,24 @@ def chat_stream(body: ChatRequest):
                 yield piece
         except Exception as e:
             yield f"\n[对话出错：{str(e)}]"
+
+    return StreamingResponse(generate_stream(), media_type="text/plain; charset=utf-8")
+
+
+@app.post("/api/agent-stream", dependencies=[Depends(require_access)])
+def agent_stream(body: AgentStreamRequest):
+    """
+    Streaming MODEL-AGENT turn for AI-vs-AI demo roleplay: an exemplary support
+    agent responds (guided by the script), streamed token-by-token.
+    """
+    history = [t.model_dump() for t in body.history]
+
+    def generate_stream():
+        try:
+            for piece in agent_reply_stream(body.script, history):
+                yield piece
+        except Exception as e:
+            yield f"\n[客服出错：{str(e)}]"
 
     return StreamingResponse(generate_stream(), media_type="text/plain; charset=utf-8")
 

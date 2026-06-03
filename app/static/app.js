@@ -244,11 +244,14 @@ function renderScript(script) {
       `<div class="actor-prompt-box">${esc(script.actor_prompt)}</div>`));
   }
 
-  const startBtn = script.actor_prompt
-    ? `<button class="start-roleplay-btn" onclick="startRoleplay()">🎭 用这个剧本开始实战对练</button>`
+  const startBtns = script.actor_prompt
+    ? `<div class="roleplay-btn-row">
+         <button class="start-roleplay-btn" onclick="startRoleplay()">🎭 我来对练</button>
+         <button class="start-roleplay-btn demo" onclick="startAutoRoleplay()">🤖 看 AI 示范（教程）</button>
+       </div>`
     : "";
 
-  el.innerHTML = startBtn + cards.join("");
+  el.innerHTML = startBtns + cards.join("");
 }
 
 function card(headerText, bodyHtml) {
@@ -601,9 +604,11 @@ function startRoleplay() {
     return;
   }
   roleplayHistory = [];
+  autoStop = true; // stop any running demo loop
   document.getElementById("roleplay-title").textContent = currentScript.title || "实战对练";
   document.getElementById("roleplay-messages").innerHTML = "";
   document.getElementById("roleplay-input").value = "";
+  document.getElementById("roleplay-input-row").style.display = ""; // human mode: show input
   document.getElementById("roleplay-overlay").style.display = "flex";
   document.getElementById("roleplay-input").focus();
   // The customer (AI) opens the conversation.
@@ -611,7 +616,9 @@ function startRoleplay() {
 }
 
 function closeRoleplay() {
+  autoStop = true; // halt the demo loop if running
   document.getElementById("roleplay-overlay").style.display = "none";
+  document.getElementById("roleplay-input-row").style.display = ""; // restore for next time
 }
 
 function handleChatKey(event) {
@@ -635,37 +642,11 @@ async function fetchCustomerReply() {
   setChatBusy(true);
   appendTyping();
   try {
-    const res = await apiFetch("/api/chat-stream", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        actor_prompt: currentScript.actor_prompt,
-        history: roleplayHistory,
-      }),
-    });
-
-    if (!res.ok) {
-      removeTyping();
-      let msg = `对话请求失败 (HTTP ${res.status})`;
-      try { const d = await res.json(); msg = d.error || d.detail || msg; } catch (_) {}
-      showError(msg);
-      return;
-    }
-
-    // Stream the reply token-by-token into a fresh customer bubble.
-    removeTyping();
-    const bubbleEl = createStreamingBubble();
-    const box = document.getElementById("roleplay-messages");
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let full = "";
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      full += decoder.decode(value, { stream: true });
-      bubbleEl.textContent = full;
-      box.scrollTop = box.scrollHeight;
-    }
+    const full = await streamTurn(
+      "/api/chat-stream",
+      { actor_prompt: currentScript.actor_prompt, history: roleplayHistory },
+      "customer", "客户（AI）", removeTyping,
+    );
     roleplayHistory.push({ role: "customer", text: full });
   } catch (e) {
     removeTyping();
@@ -675,14 +656,103 @@ async function fetchCustomerReply() {
   }
 }
 
-function createStreamingBubble() {
+/** POST to a streaming endpoint and render tokens into a fresh bubble. Returns the full text. */
+async function streamTurn(url, body, role, label, onStart) {
+  const res = await apiFetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (onStart) onStart();
+  if (!res.ok) {
+    let msg = `请求失败 (HTTP ${res.status})`;
+    try { const d = await res.json(); msg = d.error || d.detail || msg; } catch (_) {}
+    throw new Error(msg);
+  }
+  const bubbleEl = createStreamingBubble(role, label);
+  const box = document.getElementById("roleplay-messages");
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let full = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    full += decoder.decode(value, { stream: true });
+    bubbleEl.textContent = full;
+    box.scrollTop = box.scrollHeight;
+  }
+  return full;
+}
+
+function createStreamingBubble(role, label) {
   const box = document.getElementById("roleplay-messages");
   const wrap = document.createElement("div");
-  wrap.className = "bubble-wrap customer";
-  wrap.innerHTML = `<span class="bubble-role">客户（AI）</span><div class="bubble customer"></div>`;
+  wrap.className = `bubble-wrap ${role}`;
+  wrap.innerHTML = `<span class="bubble-role">${esc(label)}</span><div class="bubble ${role}"></div>`;
   box.appendChild(wrap);
   box.scrollTop = box.scrollHeight;
   return wrap.querySelector(".bubble");
+}
+
+// ---------------------------------------------------------------------------
+// AI-vs-AI demo roleplay (a "model answer" template for trainees to watch)
+// ---------------------------------------------------------------------------
+
+let autoStop = false;
+
+function startAutoRoleplay() {
+  if (!currentScript || !currentScript.actor_prompt) {
+    showError("请先生成一个剧本"); return;
+  }
+  roleplayHistory = [];
+  autoStop = false;
+  document.getElementById("roleplay-title").textContent =
+    "🤖 AI 示范对练（教程）— " + (currentScript.title || "");
+  document.getElementById("roleplay-messages").innerHTML = "";
+  document.getElementById("roleplay-input-row").style.display = "none"; // demo: no human input
+  document.getElementById("roleplay-overlay").style.display = "flex";
+  autoRoleplayLoop();
+}
+
+async function autoRoleplayLoop() {
+  const ROUNDS = 4;
+  setChatBusy(true);
+  try {
+    for (let i = 0; i < ROUNDS; i++) {
+      if (autoStop) return;
+      appendTyping();
+      const c = await streamTurn("/api/chat-stream",
+        { actor_prompt: currentScript.actor_prompt, history: roleplayHistory },
+        "customer", "客户（AI）", removeTyping);
+      roleplayHistory.push({ role: "customer", text: c });
+      if (autoStop) return;
+      await sleep(500);
+
+      appendTyping();
+      const a = await streamTurn("/api/agent-stream",
+        { script: currentScript, history: roleplayHistory },
+        "agent", "客服（AI 示范）", removeTyping);
+      roleplayHistory.push({ role: "agent", text: a });
+      await sleep(500);
+    }
+    appendSystemNote("— 示范结束。可点右上「结束并评分」看这次示范的评分，或关闭后自己来一遍 —");
+  } catch (e) {
+    removeTyping();
+    if (!autoStop) showError(`示范出错：${e.message}`);
+  } finally {
+    setChatBusy(false);
+  }
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function appendSystemNote(text) {
+  const box = document.getElementById("roleplay-messages");
+  const note = document.createElement("div");
+  note.className = "chat-system-note";
+  note.textContent = text;
+  box.appendChild(note);
+  box.scrollTop = box.scrollHeight;
 }
 
 function appendChatBubble(role, text) {

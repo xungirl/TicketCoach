@@ -30,6 +30,7 @@ from core.prompts import (
     EVALUATE_USER_TEMPLATE,
     NORMALIZE_TICKET_SYSTEM_PROMPT,
     NORMALIZE_TICKET_USER_TEMPLATE,
+    AGENT_SYSTEM_PROMPT,
 )
 
 # Load .env file from project root
@@ -326,6 +327,34 @@ def chat_reply_stream(actor_prompt: str, history: list):
     model = _get_model()
     stream = client.chat.completions.create(
         model=model, messages=messages, temperature=0.9, stream=True,
+    )
+    for chunk in stream:
+        if not chunk.choices:
+            continue
+        delta = chunk.choices[0].delta
+        if delta and getattr(delta, "content", None):
+            yield delta.content
+
+
+def agent_reply_stream(script: dict, history: list):
+    """
+    Streaming MODEL-AGENT reply, for AI-vs-AI demo roleplay. Plays an exemplary
+    support agent guided by the script's scenario + standard_response.
+    (Agent turns map to assistant, customer turns to user.)
+    """
+    system = AGENT_SYSTEM_PROMPT.format(
+        scenario=script.get("scenario", ""),
+        standard_response=script.get("standard_response", ""),
+    )
+    messages = [{"role": "system", "content": system}]
+    for turn in history:
+        role = "assistant" if turn.get("role") == "agent" else "user"
+        messages.append({"role": role, "content": turn.get("text", "")})
+
+    client = get_client()
+    model = _get_model()
+    stream = client.chat.completions.create(
+        model=model, messages=messages, temperature=0.7, stream=True,
     )
     for chunk in stream:
         if not chunk.choices:

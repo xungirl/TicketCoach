@@ -672,7 +672,9 @@ ul { list-style: none; }
   color: var(--color-text-muted);
 }
 
-/* --- Start Roleplay Button --- */
+/* --- Start Roleplay Buttons --- */
+.roleplay-btn-row { display: flex; gap: 0.6rem; margin-bottom: 0.9rem; }
+.roleplay-btn-row .start-roleplay-btn { flex: 1; margin-bottom: 0; }
 .start-roleplay-btn {
   display: block;
   width: 100%;
@@ -682,12 +684,29 @@ ul { list-style: none; }
   border-radius: var(--radius-md);
   background: linear-gradient(135deg, #4f46e5, #7c3aed);
   color: #fff;
-  font-size: 0.92rem;
+  font-size: 0.9rem;
   font-weight: 700;
   font-family: var(--font-sans);
   cursor: pointer;
   box-shadow: 0 3px 12px rgba(79, 70, 229, 0.35);
   transition: transform var(--transition), box-shadow var(--transition);
+}
+.start-roleplay-btn.demo {
+  background: linear-gradient(135deg, #0ea5e9, #06b6d4);
+  box-shadow: 0 3px 12px rgba(14, 165, 233, 0.35);
+}
+
+/* AI-vs-AI demo: system note line */
+.chat-system-note {
+  align-self: center;
+  text-align: center;
+  font-size: 0.76rem;
+  color: var(--color-text-muted);
+  background: var(--color-surface);
+  border: 1px dashed var(--color-border-dark);
+  border-radius: 20px;
+  padding: 0.4rem 0.9rem;
+  margin: 0.4rem auto;
 }
 .start-roleplay-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(79, 70, 229, 0.45); }
 .start-roleplay-btn:active { transform: translateY(0); }
