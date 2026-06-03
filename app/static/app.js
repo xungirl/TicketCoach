@@ -7,6 +7,10 @@
 // Small helpers
 // ---------------------------------------------------------------------------
 
+// Roleplay state: the script currently loaded, and the live transcript.
+let currentScript = null;
+let roleplayHistory = []; // [{role: "customer"|"agent", text: string}]
+
 /** Escape user/model-provided text before injecting into innerHTML. */
 function esc(value) {
   if (value === null || value === undefined) return "";
@@ -106,6 +110,7 @@ async function handleGenerate() {
       return;
     }
 
+    currentScript = data.script;
     renderTicket(data.ticket);
     renderScript(data.script);
     renderReview(data.review);
@@ -216,7 +221,11 @@ function renderScript(script) {
       `<div class="actor-prompt-box">${esc(script.actor_prompt)}</div>`));
   }
 
-  el.innerHTML = cards.join("");
+  const startBtn = script.actor_prompt
+    ? `<button class="start-roleplay-btn" onclick="startRoleplay()">🎭 用这个剧本开始实战对练</button>`
+    : "";
+
+  el.innerHTML = startBtn + cards.join("");
 }
 
 function card(headerText, bodyHtml) {
@@ -431,4 +440,171 @@ function toggleBatchItem(bodyId) {
   body.classList.toggle("open");
   const toggle = body.previousElementSibling.querySelector(".batch-item-toggle");
   if (toggle) toggle.textContent = body.classList.contains("open") ? "收起 ▴" : "展开 ▾";
+}
+
+// ---------------------------------------------------------------------------
+// Roleplay chat engine (live sparring)
+// ---------------------------------------------------------------------------
+
+function startRoleplay() {
+  if (!currentScript || !currentScript.actor_prompt) {
+    showError("请先生成一个包含角色扮演 Prompt 的剧本");
+    return;
+  }
+  roleplayHistory = [];
+  document.getElementById("roleplay-title").textContent = currentScript.title || "实战对练";
+  document.getElementById("roleplay-messages").innerHTML = "";
+  document.getElementById("roleplay-input").value = "";
+  document.getElementById("roleplay-overlay").style.display = "flex";
+  document.getElementById("roleplay-input").focus();
+  // The customer (AI) opens the conversation.
+  fetchCustomerReply();
+}
+
+function closeRoleplay() {
+  document.getElementById("roleplay-overlay").style.display = "none";
+}
+
+function handleChatKey(event) {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    sendChatMessage();
+  }
+}
+
+function sendChatMessage() {
+  const input = document.getElementById("roleplay-input");
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = "";
+  roleplayHistory.push({ role: "agent", text });
+  appendChatBubble("agent", text);
+  fetchCustomerReply();
+}
+
+async function fetchCustomerReply() {
+  setChatBusy(true);
+  appendTyping();
+  try {
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        actor_prompt: currentScript.actor_prompt,
+        history: roleplayHistory,
+      }),
+    });
+    const data = await res.json();
+    removeTyping();
+    if (!res.ok || data.error) {
+      showError(data.error || `对话请求失败 (HTTP ${res.status})`);
+      return;
+    }
+    roleplayHistory.push({ role: "customer", text: data.reply });
+    appendChatBubble("customer", data.reply);
+  } catch (e) {
+    removeTyping();
+    showError(`对话出错：${e.message}`);
+  } finally {
+    setChatBusy(false);
+  }
+}
+
+function appendChatBubble(role, text) {
+  const box = document.getElementById("roleplay-messages");
+  const roleLabel = role === "agent" ? "客服（你）" : "客户（AI）";
+  const wrap = document.createElement("div");
+  wrap.className = `bubble-wrap ${role}`;
+  wrap.innerHTML = `
+    <span class="bubble-role">${roleLabel}</span>
+    <div class="bubble ${role}">${esc(text)}</div>`;
+  box.appendChild(wrap);
+  box.scrollTop = box.scrollHeight;
+}
+
+function appendTyping() {
+  const box = document.getElementById("roleplay-messages");
+  const wrap = document.createElement("div");
+  wrap.className = "bubble-wrap customer";
+  wrap.id = "typing-indicator";
+  wrap.innerHTML = `<div class="bubble customer typing"><span></span><span></span><span></span></div>`;
+  box.appendChild(wrap);
+  box.scrollTop = box.scrollHeight;
+}
+
+function removeTyping() {
+  const t = document.getElementById("typing-indicator");
+  if (t) t.remove();
+}
+
+function setChatBusy(busy) {
+  document.getElementById("roleplay-send").disabled = busy;
+  document.getElementById("roleplay-input").disabled = busy;
+}
+
+// ---------------------------------------------------------------------------
+// Session evaluation
+// ---------------------------------------------------------------------------
+
+async function endAndEvaluate() {
+  if (!roleplayHistory.some(t => t.role === "agent")) {
+    showError("你还没以客服身份说过话，无法评分");
+    return;
+  }
+
+  const evalBody = document.getElementById("eval-body");
+  evalBody.innerHTML = `
+    <div class="eval-loading">
+      <div class="spinner"></div>
+      <p class="loading-text">正在根据评分维度评估你的表现…</p>
+    </div>`;
+  document.getElementById("eval-overlay").style.display = "flex";
+
+  try {
+    const res = await fetch("/api/evaluate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ script: currentScript, transcript: roleplayHistory }),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      evalBody.innerHTML = `<div class="placeholder-msg">${esc(data.error || "评分失败")}</div>`;
+      return;
+    }
+    renderEvalResult(data);
+  } catch (e) {
+    evalBody.innerHTML = `<div class="placeholder-msg">评分出错：${esc(e.message)}</div>`;
+  }
+}
+
+function closeEval() {
+  document.getElementById("eval-overlay").style.display = "none";
+}
+
+function renderEvalResult(result) {
+  const overall = Number(result.overall_score) || 0;
+  const level = scoreLevel100(overall);
+
+  const circle = `
+    <div class="score-circle-wrap">
+      <div class="score-circle score-${level}">
+        <span class="score-number">${Math.round(overall)}</span>
+        <span class="score-label">你的得分 / 100</span>
+      </div>
+    </div>`;
+
+  let dims = "";
+  if (Array.isArray(result.dimensions)) {
+    dims = `<div class="dimension-list">${result.dimensions.map(renderDimension).join("")}</div>`;
+  }
+
+  const highlights = renderList(
+    result.highlights, "做得好的地方", "suggestion-list", "suggestion-item", "suggestion-icon", "✅");
+  const improvements = renderList(
+    result.improvements, "可改进的地方", "issue-list", "issue-item", "issue-icon", "🔧");
+  const missed = renderList(
+    result.missed_challenge_points, "未接住的挑战点", "issue-list", "issue-item", "issue-icon", "⚠️");
+
+  document.getElementById("eval-body").innerHTML =
+    circle + dims + highlights + improvements + missed;
 }

@@ -25,6 +25,9 @@ from core.prompts import (
     SCRIPT_USER_TEMPLATE,
     REVIEW_SYSTEM_PROMPT,
     REVIEW_USER_TEMPLATE,
+    CHAT_SYSTEM_WRAPPER,
+    EVALUATE_SYSTEM_PROMPT,
+    EVALUATE_USER_TEMPLATE,
 )
 
 # Load .env file from project root
@@ -65,84 +68,98 @@ def _strip_markdown_fences(text: str) -> str:
     return text
 
 
-def call_llm(system: str, user: str, json_mode: bool = True) -> dict:
+def _raw_chat(messages: list, json_mode: bool = False, temperature: float = 0.8) -> str:
     """
-    Single LLM call with JSON parsing + retry logic.
-    - Uses response_format={"type": "json_object"} when json_mode=True
-    - Strips markdown code blocks if present
-    - On JSON parse failure, retries once
-    - Timeout set to 60s
-    - Returns parsed dict
+    Low-level chat completion: takes a full messages list, returns raw text.
+    Shared by both the JSON pipeline calls and the free-text roleplay engine.
     """
     client = get_client()
     model = _get_model()
 
     kwargs = {
         "model": model,
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
-        "temperature": 0.8,
+        "messages": messages,
+        "temperature": temperature,
     }
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
 
+    try:
+        response = client.chat.completions.create(**kwargs)
+        return response.choices[0].message.content or ""
+    except openai.OpenAIError as e:
+        raise RuntimeError(f"LLM API error: {e}")
+
+
+def call_llm(system: str, user: str, json_mode: bool = True) -> dict:
+    """
+    Single system+user LLM call returning a parsed dict.
+    - Uses response_format={"type": "json_object"} when json_mode=True
+    - Strips markdown code blocks if present
+    - On JSON parse failure, retries once
+    - Returns parsed dict
+    """
+    messages = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": user},
+    ]
+
+    raw = ""
     for attempt in range(2):  # try up to 2 times
+        raw = _raw_chat(messages, json_mode=json_mode)
         try:
-            response = client.chat.completions.create(**kwargs)
-            raw = response.choices[0].message.content or ""
-            cleaned = _strip_markdown_fences(raw)
-            result = json.loads(cleaned)
-            return result
+            return json.loads(_strip_markdown_fences(raw))
         except json.JSONDecodeError as e:
             if attempt == 0:
                 print(f"[pipeline] JSON parse error on attempt 1, retrying... ({e})")
                 time.sleep(1)
                 continue
-            else:
-                raise ValueError(f"Failed to parse LLM JSON response after 2 attempts. Last error: {e}\nRaw response: {raw[:500]}")
-        except openai.OpenAIError as e:
-            raise RuntimeError(f"LLM API error: {e}")
+            raise ValueError(
+                f"Failed to parse LLM JSON response after 2 attempts. "
+                f"Last error: {e}\nRaw response: {raw[:500]}"
+            )
 
 
 # ---------------------------------------------------------------------------
 # Parameter randomization
 # ---------------------------------------------------------------------------
 
+# Alibaba Cloud product lines (this tool trains Alibaba Cloud support agents)
 BUSINESS_TYPES = [
-    "电商/退货",
-    "电商/物流延误",
-    "电商/商品质量",
-    "金融/信用卡扣费",
-    "金融/贷款申请",
-    "电信/套餐变更",
-    "电信/话费异常",
-    "教育/课程退款",
-    "教育/课程质量投诉",
-    "餐饮/外卖订单问题",
-    "出行/订单取消",
-    "出行/司机投诉",
-    "保险/理赔纠纷",
-    "游戏/账号封禁申诉",
-    "游戏/虚拟商品纠纷",
+    "云服务器ECS/实例连接",
+    "云服务器ECS/性能与卡顿",
+    "对象存储OSS/数据与权限",
+    "云数据库RDS/连接与性能",
+    "域名服务/解析与续费",
+    "ICP备案/备案审核",
+    "账单计费/异常扣费",
+    "弹性公网IP/带宽流量",
+    "CDN/加速与回源",
+    "云安全/DDoS与攻击防护",
+    "SSL证书/申请与部署",
+    "短信服务/签名与模板",
+    "工单服务/响应与升级",
+    "退款与代金券/费用纠纷",
+    "容器服务ACK/集群运维",
 ]
 
 EMOTIONS = ["平静", "不满", "愤怒"]
 
 ISSUE_CATEGORIES = [
-    "色差/实物与描述不符",
-    "物流延误/包裹丢失",
-    "扣费异常/重复扣款",
-    "服务态度差",
-    "商品质量问题",
-    "虚假宣传",
-    "退款长时间未到账",
-    "账号安全问题",
-    "优惠券/促销活动纠纷",
-    "发货错误/漏发",
-    "售后政策不合理",
-    "平台规则不透明",
+    "实例无法远程连接（SSH/RDP）",
+    "控制台操作报错",
+    "莫名扣费/账单不透明",
+    "欠费停机/资源被释放",
+    "数据误删要求恢复",
+    "域名解析不生效",
+    "备案被驳回",
+    "数据库连接超时/失败",
+    "网站遭遇DDoS攻击",
+    "带宽跑满/流量费暴涨",
+    "续费/退款纠纷",
+    "配额或限额申请被拒",
+    "工单响应慢/要求升级技术专家",
+    "证书部署后不生效",
 ]
 
 DIFFICULTIES = ["低", "中", "高"]
@@ -168,9 +185,9 @@ def generate_ticket(params: dict) -> dict:
     Calls LLM with ticket prompt, injecting params into user message.
     """
     user_msg = TICKET_USER_TEMPLATE.format(
-        business_type=params.get("business_type", "电商/退货"),
+        business_type=params.get("business_type", "云服务器ECS/实例连接"),
         emotion=params.get("emotion", "不满"),
-        issue_category=params.get("issue_category", "物流延误"),
+        issue_category=params.get("issue_category", "实例无法远程连接（SSH/RDP）"),
         difficulty=params.get("difficulty", "中"),
     )
     print(f"[pipeline] Step 1: Generating ticket (type={params.get('business_type')}, emotion={params.get('emotion')})...")
@@ -208,6 +225,61 @@ def review_script(ticket: dict, script: dict) -> dict:
     score = review.get("overall_score", "N/A")
     print(f"[pipeline] Step 3 done. overall_score={score}")
     return review
+
+
+# ---------------------------------------------------------------------------
+# Roleplay chat engine (live sparring) + session evaluation
+# ---------------------------------------------------------------------------
+
+def chat_reply(actor_prompt: str, history: list) -> str:
+    """
+    Produce the next CUSTOMER turn in a live roleplay.
+
+    actor_prompt: the script's actor_prompt (defines the customer character).
+    history: list of {"role": "customer"|"agent", "text": str}, in order.
+             The trainee plays the agent; the LLM plays the customer.
+    Returns the customer's next message as plain text.
+    """
+    system = CHAT_SYSTEM_WRAPPER.format(actor_prompt=actor_prompt)
+    messages = [{"role": "system", "content": system}]
+
+    for turn in history:
+        # customer turns are the assistant's own past lines; agent turns are "user"
+        role = "assistant" if turn.get("role") == "customer" else "user"
+        messages.append({"role": role, "content": turn.get("text", "")})
+
+    if not history:
+        # Kick off the conversation: the customer speaks first.
+        messages.append({
+            "role": "user",
+            "content": "（系统提示：对练现在开始，请你作为这位客户主动说出第一句话，开启对话。只说客户会说的话。）",
+        })
+
+    return _raw_chat(messages, json_mode=False, temperature=0.9).strip()
+
+
+def _format_transcript(transcript: list) -> str:
+    """Render a roleplay transcript as readable text for the evaluator."""
+    lines = []
+    for turn in transcript:
+        who = "客服(agent)" if turn.get("role") == "agent" else "客户(customer)"
+        lines.append(f"{who}: {turn.get('text', '')}")
+    return "\n".join(lines)
+
+
+def evaluate_session(script: dict, transcript: list) -> dict:
+    """
+    Score the trainee's (agent's) performance after a roleplay session,
+    using the script's scoring_criteria. Returns a review dict.
+    """
+    user_msg = EVALUATE_USER_TEMPLATE.format(
+        script_json=json.dumps(script, ensure_ascii=False, indent=2),
+        transcript=_format_transcript(transcript),
+    )
+    print(f"[pipeline] Evaluating roleplay session ({len(transcript)} turns)...")
+    result = call_llm(EVALUATE_SYSTEM_PROMPT, user_msg, json_mode=True)
+    print(f"[pipeline] Evaluation done. overall_score={result.get('overall_score', 'N/A')}")
+    return result
 
 
 # ---------------------------------------------------------------------------

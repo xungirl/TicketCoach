@@ -655,6 +655,157 @@ ul { list-style: none; }
   color: var(--color-text-muted);
 }
 
+/* --- Start Roleplay Button --- */
+.start-roleplay-btn {
+  display: block;
+  width: 100%;
+  padding: 0.7rem 1rem;
+  margin-bottom: 0.9rem;
+  border: none;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, #4f46e5, #7c3aed);
+  color: #fff;
+  font-size: 0.92rem;
+  font-weight: 700;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  box-shadow: 0 3px 12px rgba(79, 70, 229, 0.35);
+  transition: transform var(--transition), box-shadow var(--transition);
+}
+.start-roleplay-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(79, 70, 229, 0.45); }
+.start-roleplay-btn:active { transform: translateY(0); }
+
+/* --- Roleplay Overlay & Chat Window --- */
+.roleplay-overlay, .eval-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.6);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+.roleplay-box {
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  width: 100%;
+  max-width: 680px;
+  height: 80vh;
+  max-height: 760px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.roleplay-header {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.85rem 1.1rem;
+  border-bottom: 1px solid var(--color-border);
+  background: linear-gradient(135deg, #eef2ff 0%, #f5f3ff 100%);
+}
+.roleplay-icon { font-size: 1.4rem; }
+.roleplay-titles { flex: 1; min-width: 0; }
+.roleplay-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.roleplay-sub { font-size: 0.74rem; color: var(--color-text-muted); }
+.roleplay-close {
+  background: none;
+  border: none;
+  font-size: 1.1rem;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  padding: 0.2rem 0.4rem;
+  line-height: 1;
+}
+.roleplay-close:hover { color: var(--color-text); }
+#roleplay-eval-btn { padding: 0.4rem 0.9rem; font-size: 0.82rem; }
+
+.roleplay-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  background: var(--color-surface-alt);
+}
+
+.roleplay-input-row {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-end;
+  padding: 0.75rem 1.1rem;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+.roleplay-input-row textarea {
+  flex: 1;
+  resize: none;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--color-border-dark);
+  border-radius: var(--radius-sm);
+  font-size: 0.88rem;
+  font-family: var(--font-sans);
+  line-height: 1.5;
+  color: var(--color-text);
+}
+.roleplay-input-row textarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+}
+.roleplay-input-row textarea:disabled { background: var(--color-bg); }
+
+/* --- Typing indicator --- */
+.bubble.typing { display: inline-flex; gap: 4px; align-items: center; }
+.bubble.typing span {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--color-text-light);
+  animation: typing-bounce 1.2s infinite ease-in-out;
+}
+.bubble.typing span:nth-child(2) { animation-delay: 0.2s; }
+.bubble.typing span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes typing-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+
+/* --- Evaluation Overlay --- */
+.eval-box {
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  width: 100%;
+  max-width: 560px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.eval-header {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.85rem 1.1rem;
+  border-bottom: 1px solid var(--color-border);
+  background: linear-gradient(135deg, #d1fae5 0%, #ecfdf5 100%);
+}
+.eval-icon { font-size: 1.4rem; }
+.eval-title { flex: 1; font-size: 1rem; font-weight: 700; color: var(--color-text); }
+.eval-body { padding: 1.1rem; overflow-y: auto; }
+.eval-loading { text-align: center; padding: 2.5rem 1rem; }
+.eval-loading .loading-text { margin-top: 1rem; }
+
 /* --- Site Footer --- */
 .site-footer {
   text-align: center;

@@ -14,7 +14,15 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from core.pipeline import run_pipeline, random_params, BUSINESS_TYPES, EMOTIONS, ISSUE_CATEGORIES, DIFFICULTIES
+from core.pipeline import (
+    run_pipeline,
+    chat_reply,
+    evaluate_session,
+    BUSINESS_TYPES,
+    EMOTIONS,
+    ISSUE_CATEGORIES,
+    DIFFICULTIES,
+)
 
 # ---------------------------------------------------------------------------
 # App initialization
@@ -30,7 +38,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,  # wildcard origin + credentials is rejected by browsers; we use neither
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -49,6 +57,21 @@ class GenerateRequest(BaseModel):
     emotion: Optional[str] = None
     issue_category: Optional[str] = None
     difficulty: Optional[str] = None
+
+
+class ChatTurn(BaseModel):
+    role: str  # "customer" or "agent"
+    text: str
+
+
+class ChatRequest(BaseModel):
+    actor_prompt: str
+    history: list[ChatTurn] = []
+
+
+class EvaluateRequest(BaseModel):
+    script: dict
+    transcript: list[ChatTurn]
 
 
 # ---------------------------------------------------------------------------
@@ -76,7 +99,7 @@ async def get_options():
 
 
 @app.post("/api/generate")
-async def generate(body: GenerateRequest):
+def generate(body: GenerateRequest):
     """
     Run the 3-step pipeline to generate ticket, script, and review.
     All body fields are optional; missing fields will be randomized.
@@ -109,7 +132,7 @@ async def generate(body: GenerateRequest):
 
 
 @app.post("/api/batch")
-async def batch_generate(n: int = Query(default=3, ge=1, le=20)):
+def batch_generate(n: int = Query(default=3, ge=1, le=20)):
     """
     Run n pipelines sequentially and return results + basic stats.
     Stats include: avg_score, business_type distribution, difficulty distribution.
@@ -158,6 +181,47 @@ async def batch_generate(n: int = Query(default=3, ge=1, le=20)):
         "stats": stats,
         "errors": errors,
     })
+
+
+# ---------------------------------------------------------------------------
+# Roleplay chat engine + session evaluation
+# ---------------------------------------------------------------------------
+
+@app.post("/api/chat")
+def chat(body: ChatRequest):
+    """
+    One turn of live roleplay. The LLM replies as the customer, driven by the
+    script's actor_prompt. Stateless: the frontend sends the full history each
+    time. Returns: {"reply": "<customer's next message>"}.
+    """
+    try:
+        history = [t.model_dump() for t in body.history]
+        reply = chat_reply(body.actor_prompt, history)
+        return {"reply": reply}
+    except RuntimeError as e:
+        return JSONResponse(status_code=500, content={"error": f"LLM 调用失败: {str(e)}"})
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": f"对话失败: {str(e)}"})
+
+
+@app.post("/api/evaluate")
+def evaluate(body: EvaluateRequest):
+    """
+    Score the trainee's (agent's) performance after a roleplay session, using
+    the script's scoring_criteria. Returns a review-style dict.
+    """
+    try:
+        transcript = [t.model_dump() for t in body.transcript]
+        if not any(t["role"] == "agent" for t in transcript):
+            return JSONResponse(status_code=400, content={"error": "对练记录中没有客服发言，无法评分"})
+        result = evaluate_session(body.script, transcript)
+        return JSONResponse(content=result)
+    except ValueError as e:
+        return JSONResponse(status_code=500, content={"error": f"评分解析失败: {str(e)}"})
+    except RuntimeError as e:
+        return JSONResponse(status_code=500, content={"error": f"LLM 调用失败: {str(e)}"})
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": f"评分失败: {str(e)}"})
 
 
 # ---------------------------------------------------------------------------

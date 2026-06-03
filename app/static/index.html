@@ -154,6 +154,40 @@
     </div>
   </section>
 
+  <!-- Roleplay Chat Overlay -->
+  <div class="roleplay-overlay" id="roleplay-overlay" style="display:none;">
+    <div class="roleplay-box">
+      <div class="roleplay-header">
+        <span class="roleplay-icon">🎭</span>
+        <div class="roleplay-titles">
+          <div class="roleplay-title" id="roleplay-title">实战对练</div>
+          <div class="roleplay-sub">你扮演「客服」，AI 扮演「客户」。完成后点右侧「结束并评分」</div>
+        </div>
+        <button class="btn-secondary" id="roleplay-eval-btn" onclick="endAndEvaluate()">结束并评分</button>
+        <button class="roleplay-close" onclick="closeRoleplay()">✕</button>
+      </div>
+      <div class="roleplay-messages" id="roleplay-messages"></div>
+      <div class="roleplay-input-row">
+        <textarea id="roleplay-input" rows="2"
+          placeholder="以客服身份输入回复，回车发送（Shift+Enter 换行）…"
+          onkeydown="handleChatKey(event)"></textarea>
+        <button class="btn-primary" id="roleplay-send" onclick="sendChatMessage()">发送</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Evaluation Result Overlay -->
+  <div class="eval-overlay" id="eval-overlay" style="display:none;">
+    <div class="eval-box">
+      <div class="eval-header">
+        <span class="eval-icon">📋</span>
+        <div class="eval-title">对练评分报告</div>
+        <button class="roleplay-close" onclick="closeEval()">✕</button>
+      </div>
+      <div class="eval-body" id="eval-body"></div>
+    </div>
+  </div>
+
   <footer class="site-footer">
     <p>TicketCoach · 基于大语言模型的客服培训剧本自动生成工具 · Powered by OpenAI-compatible API</p>
   </footer>
