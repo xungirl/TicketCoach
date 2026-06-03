@@ -612,10 +612,14 @@ async function loadLibrary() {
 
 function renderLibrary(items) {
   const row = document.getElementById("library-row");
+  const section = document.getElementById("library-section");
   if (!items.length) {
-    row.innerHTML = `<span class="library-empty">库为空（生成后点「💾 存入剧本库」）</span>`;
+    // Nothing to show yet — keep the whole section hidden (no empty/loading flicker).
+    section.style.display = "none";
     return;
   }
+  // Reveal the fully-populated section in one go → feels instantly loaded.
+  section.style.display = "";
   row.innerHTML = items.map(it => {
     const lvl = scoreLevel100(Number(it.score) || 0);
     return `<button class="library-card" onclick="openLibraryItem(${it.id})">

@@ -80,14 +80,14 @@
     <button class="error-close" onclick="hideError()">✕</button>
   </div>
 
-  <!-- Script Library (instant retrieval) -->
-  <section class="library-section">
+  <!-- Script Library (instant retrieval; revealed only once data is ready) -->
+  <section class="library-section" id="library-section" style="display:none;">
     <div class="library-inner">
       <div class="library-head">
         <h2 class="library-title">📚 剧本库 · 秒取</h2>
         <span class="library-sub">企业级思路：预生成存库，点击 0 等待载入（不调用模型）</span>
       </div>
-      <div class="library-row" id="library-row"><span class="library-empty">加载中…</span></div>
+      <div class="library-row" id="library-row"></div>
     </div>
   </section>
 
@@ -212,7 +212,7 @@
         <button class="roleplay-close" onclick="closeRoleplay()">✕</button>
       </div>
       <div class="roleplay-messages" id="roleplay-messages"></div>
-      <div class="roleplay-input-row">
+      <div class="roleplay-input-row" id="roleplay-input-row">
         <textarea id="roleplay-input" rows="2"
           placeholder="以客服身份输入回复，回车发送（Shift+Enter 换行）…"
           onkeydown="handleChatKey(event)"></textarea>
