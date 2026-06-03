@@ -129,7 +129,7 @@ async function handleGenerate() {
     const data = await res.json();
 
     if (!res.ok || data.error) {
-      showError(data.error || `请求失败 (HTTP ${res.status})`);
+      showError(data.error || data.detail || `请求失败 (HTTP ${res.status})`);
       return;
     }
 
@@ -344,7 +344,7 @@ async function handleBatch() {
     const data = await res.json();
 
     if (!res.ok || data.error) {
-      showError(data.error || `批量请求失败 (HTTP ${res.status})`);
+      showError(data.error || data.detail || `批量请求失败 (HTTP ${res.status})`);
       return;
     }
 

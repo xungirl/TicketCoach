@@ -5,6 +5,8 @@ Serves the frontend and exposes the pipeline API endpoints.
 
 import json
 import os
+import threading
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -88,6 +90,36 @@ def require_access(x_access_token: Optional[str] = Header(default=None)):
 
 
 # ---------------------------------------------------------------------------
+# Daily generation quota
+# ---------------------------------------------------------------------------
+# Caps the number of full pipeline runs per day (generate counts 1, batch
+# counts n) to protect API spend on a public link. Set GEN_DAILY_LIMIT=0 (or
+# leave unset) to disable. In-memory counter, resets at UTC date change; with
+# Cloud Run --max-instances 1 it's a reliable per-day cap. The real money
+# backstop is a spending limit on the LLM provider side.
+
+_quota_lock = threading.Lock()
+_quota_state = {"day": "", "count": 0}
+
+
+def enforce_quota(n: int = 1):
+    limit = int(os.environ.get("GEN_DAILY_LIMIT", "0"))
+    if limit <= 0:
+        return
+    today = time.strftime("%Y-%m-%d", time.gmtime())
+    with _quota_lock:
+        if _quota_state["day"] != today:
+            _quota_state["day"] = today
+            _quota_state["count"] = 0
+        if _quota_state["count"] + n > limit:
+            raise HTTPException(
+                status_code=429,
+                detail=f"今日生成额度已用完（每日上限 {limit} 次），请明天再试",
+            )
+        _quota_state["count"] += n
+
+
+# ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
 
@@ -118,6 +150,7 @@ def generate(body: GenerateRequest):
     All body fields are optional; missing fields will be randomized.
     Returns: {"ticket": ..., "script": ..., "review": ..., "params": ...}
     """
+    enforce_quota(1)
     try:
         params = {
             "business_type": body.business_type or None,
@@ -150,6 +183,7 @@ def batch_generate(n: int = Query(default=3, ge=1, le=5)):
     Run n pipelines sequentially and return results + basic stats.
     Stats include: avg_score, business_type distribution, difficulty distribution.
     """
+    enforce_quota(n)
     results = []
     errors = []
 
