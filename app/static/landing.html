@@ -129,6 +129,57 @@
     .step h4 { color: #fff; font-size: 0.98rem; margin-bottom: 0.3rem; }
     .step p { font-size: 0.82rem; color: #94a3b8; }
 
+    /* progress timeline */
+    .timeline { position: relative; max-width: 720px; margin: 0 auto; padding: 0.5rem 0; }
+    .tl-line, .tl-line-fill {
+      position: absolute; left: 11px; top: 0; width: 3px; border-radius: 2px;
+    }
+    .tl-line { bottom: 0; background: rgba(148, 163, 184, 0.22); }
+    .tl-line-fill {
+      height: 0; background: linear-gradient(180deg, #6366f1, #8b5cf6, #d946ef);
+      box-shadow: 0 0 14px rgba(139, 92, 246, 0.65);
+    }
+    .tl-item { position: relative; padding: 0 0 2rem 2.8rem; }
+    .tl-item:last-child { padding-bottom: 0.4rem; }
+    .tl-dot {
+      position: absolute; left: 0; top: 0.15rem; width: 25px; height: 25px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.7rem; font-weight: 800; color: #fff;
+      background: #0b1020; border: 2px solid rgba(148, 163, 184, 0.45);
+    }
+    .tl-item.done .tl-dot {
+      background: var(--brand); border: none;
+      box-shadow: 0 0 16px rgba(139, 92, 246, 0.7);
+    }
+    .tl-item.done .tl-dot::after { content: "✓"; }
+    .tl-item.current .tl-dot { animation: tl-pulse 2.2s infinite; }
+    @keyframes tl-pulse {
+      0% { box-shadow: 0 0 0 0 rgba(217, 70, 239, 0.6); }
+      70% { box-shadow: 0 0 0 14px rgba(217, 70, 239, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(217, 70, 239, 0); }
+    }
+    .tl-card {
+      background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 14px; padding: 1rem 1.2rem; backdrop-filter: blur(8px);
+      transition: transform .2s, border-color .2s;
+    }
+    .tl-card:hover { transform: translateX(4px); border-color: rgba(139,92,246,0.5); }
+    .tl-date {
+      font-size: 0.75rem; font-weight: 700; letter-spacing: 0.5px;
+      color: #c7d2fe; margin-bottom: 0.3rem;
+    }
+    .tl-card h3 { color: #fff; font-size: 1rem; font-weight: 700; margin-bottom: 0.3rem; }
+    .tl-card p { color: #94a3b8; font-size: 0.85rem; line-height: 1.6; }
+    .tl-item.todo .tl-card { opacity: 0.55; border-style: dashed; }
+    .tl-item.todo .tl-date { color: #64748b; }
+    .tl-item.todo .tl-card h3 { color: #94a3b8; }
+    .tl-tag {
+      display: inline-block; font-size: 0.68rem; font-weight: 700; color: #f0abfc;
+      background: rgba(217,70,239,0.15); border: 1px solid rgba(217,70,239,0.4);
+      border-radius: 999px; padding: 0.1rem 0.55rem; margin-left: 0.4rem; vertical-align: 1px;
+    }
+    @media (prefers-reduced-motion: reduce) { .tl-item.current .tl-dot { animation: none; } }
+
     /* bottom cta */
     .final { text-align: center; padding: clamp(3rem, 9vw, 5rem) 0; }
     .final h2 { color: #fff; font-size: clamp(1.6rem, 5vw, 2.4rem); font-weight: 900; margin-bottom: 1.6rem; }
@@ -180,40 +231,108 @@
         生成剧本 → 实战对练 → AI 打分，一条龙闭环。</p>
       <div class="cta-row reveal d3">
         <a class="cta" href="/app">即刻体验 →</a>
-        <a class="cta-ghost" href="#features">了解功能</a>
+        <a class="cta-ghost" href="#progress">查看进度</a>
       </div>
     </header>
 
-    <div class="preview">
-      <img src="/static/preview-main.png" alt="TicketCoach 界面预览" />
-    </div>
+    <section class="section" id="progress">
+      <h2>项目进度</h2>
+      <p class="lead">从第一行代码到评估闭环——亮色已完成，灰色在路上</p>
+      <div class="timeline" id="timeline">
+        <div class="tl-line"></div>
+        <div class="tl-line-fill" id="tl-fill"></div>
 
-    <section class="section" id="features">
-      <h2>核心能力</h2>
-      <p class="lead">用大语言模型，把一条工单跑成一整套培训资产</p>
-      <div class="grid">
-        <div class="card"><div class="ico">🤖</div><h3>多步 Agent 流水线</h3><p>造工单 → 提炼剧本 → 质检打分，多次模型调用串成闭环，低分自动重生成。</p></div>
-        <div class="card"><div class="ico">🎭</div><h3>真人实战对练</h3><p>你扮客服，AI 用剧本人设扮难缠客户，逐字流式回复，情绪随你的应对升降。</p></div>
-        <div class="card"><div class="ico">📊</div><h3>AI 自动评分</h3><p>对练结束按评分维度打分，指出做得好 / 可改进 / 没接住的挑战点。</p></div>
-        <div class="card"><div class="ico">📚</div><h3>剧本库 · 秒取</h3><p>预生成存库，点击 0 等待载入——企业级"离线生成、在线秒取"思路。</p></div>
-        <div class="card"><div class="ico">📥</div><h3>导入真实工单</h3><p>已有真实工单？粘贴或上传文件，直接生成剧本并导出 JSON，对接团队系统。</p></div>
-        <div class="card"><div class="ico">🤝</div><h3>AI 示范教程</h3><p>两个 AI 自动演一遍标准对话，给新人当"标准答案"模板。</p></div>
+        <div class="tl-item done">
+          <div class="tl-dot"></div>
+          <div class="tl-card">
+            <div class="tl-date">2026-06-02</div>
+            <h3>多步 Agent 流水线跑通</h3>
+            <p>造工单 → 提炼剧本 → 质检打分三步串成闭环，低分自动重新生成。</p>
+          </div>
+        </div>
+
+        <div class="tl-item done">
+          <div class="tl-dot"></div>
+          <div class="tl-card">
+            <div class="tl-date">2026-06-02</div>
+            <h3>真人实战对练 + AI 评分</h3>
+            <p>你扮客服，AI 按剧本人设扮客户；对练结束按评分维度自动点评，聚焦阿里云客服场景。</p>
+          </div>
+        </div>
+
+        <div class="tl-item done">
+          <div class="tl-dot"></div>
+          <div class="tl-card">
+            <div class="tl-date">2026-06-03</div>
+            <h3>部署上线 Google Cloud Run</h3>
+            <p>口令保护 + 每日生成额度，正式可对外访问。</p>
+          </div>
+        </div>
+
+        <div class="tl-item done">
+          <div class="tl-dot"></div>
+          <div class="tl-card">
+            <div class="tl-date">2026-06-03</div>
+            <h3>真实工单导入 → 剧本导出</h3>
+            <p>粘贴或上传真实工单，直接生成剧本并导出 JSON，对接团队系统。</p>
+          </div>
+        </div>
+
+        <div class="tl-item done">
+          <div class="tl-dot"></div>
+          <div class="tl-card">
+            <div class="tl-date">2026-06-03</div>
+            <h3>流式对练 · AI 示范 · 剧本库</h3>
+            <p>逐字流式回复；两个 AI 演示标准对话；剧本离线预生成、在线秒取。</p>
+          </div>
+        </div>
+
+        <div class="tl-item done">
+          <div class="tl-dot"></div>
+          <div class="tl-card">
+            <div class="tl-date">2026-06-03</div>
+            <h3>动效落地页上线</h3>
+            <p>GSAP 滚动动效 + 响应式首页，应用迁移至 /app。</p>
+          </div>
+        </div>
+
+        <div class="tl-item done current">
+          <div class="tl-dot"></div>
+          <div class="tl-card">
+            <div class="tl-date">2026-06-10 <span class="tl-tag">最新</span></div>
+            <h3>评估 Harness：让 Agent 可观测、可打分</h3>
+            <p>执行 trace 插桩 + 24 条标注测试集 + 硬指标/LLM 裁判双轨打分，并用「坏化实验」反向验证评估本身有效。</p>
+          </div>
+        </div>
+
+        <div class="tl-item todo">
+          <div class="tl-dot"></div>
+          <div class="tl-card">
+            <div class="tl-date">规划中</div>
+            <h3>Gemini 裁判 + 全量基线</h3>
+            <p>接入独立裁判模型，跑通 24 条全量基线，固化各环节质量基准。</p>
+          </div>
+        </div>
+
+        <div class="tl-item todo">
+          <div class="tl-dot"></div>
+          <div class="tl-card">
+            <div class="tl-date">规划中</div>
+            <h3>多轮对练自动评估</h3>
+            <p>用模拟学员 agent 自动跑完整多轮对练，覆盖最难评的实战环节。</p>
+          </div>
+        </div>
+
+        <div class="tl-item todo">
+          <div class="tl-dot"></div>
+          <div class="tl-card">
+            <div class="tl-date">规划中</div>
+            <h3>评估接入 CI 回归门禁</h3>
+            <p>每次改 prompt / 换模型自动跑评估，分数下降即拦截，告别「改了不知道变没变差」。</p>
+          </div>
+        </div>
       </div>
     </section>
-
-    <section class="section">
-      <h2>三步上手</h2>
-      <p class="lead">点开就能用，无需配置</p>
-      <div class="steps">
-        <div class="step"><div class="num">1</div><h4>选场景 / 取库</h4><p>选业务参数生成，或从剧本库秒取一份</p></div>
-        <div class="step"><div class="num">2</div><h4>开始对练</h4><p>与 AI 客户实战，或看 AI 示范</p></div>
-        <div class="step"><div class="num">3</div><h4>看评分</h4><p>按维度打分 + 改进建议</p></div>
-      </div>
-    </section>
-
-    <div class="preview">
-      <img src="/static/preview-chat.png" alt="实战对练界面预览" />
-    </div>
 
     <section class="final">
       <h2>准备好开练了吗？</h2>
@@ -229,27 +348,41 @@
   <script>
     // Content is visible by default; GSAP only enhances it. If GSAP fails to
     // load or errors, the page still shows everything (animations are optional).
+
+    // The bright line must end at the LAST COMPLETED dot — everything below
+    // stays gray. Computed from real layout so it survives content edits.
+    function progressFillHeight() {
+      var timeline = document.getElementById("timeline");
+      var doneDots = timeline.querySelectorAll(".tl-item.done .tl-dot");
+      if (!doneDots.length) return 0;
+      var last = doneDots[doneDots.length - 1];
+      return last.offsetTop + last.offsetHeight / 2 +
+             (last.closest(".tl-item").offsetTop || 0);
+    }
+
     try {
+      var fill = document.getElementById("tl-fill");
+      var target = progressFillHeight();
       if (window.gsap) {
         gsap.registerPlugin(ScrollTrigger);
 
-        // Feature cards reveal on scroll, in cascading waves.
-        gsap.utils.toArray(".card").forEach((el, i) => {
-          gsap.from(el, { opacity: 0, y: 28, duration: 0.7, ease: "power2.out", delay: (i % 3) * 0.08,
-            scrollTrigger: { trigger: el, start: "top 88%" } });
+        // Bright line grows as you scroll down the timeline.
+        gsap.to(fill, {
+          height: target, ease: "none",
+          scrollTrigger: { trigger: "#timeline", start: "top 75%", end: "bottom 65%", scrub: 0.5 }
         });
 
-        // Steps reveal on scroll.
-        gsap.utils.toArray(".step").forEach((el, i) => {
-          gsap.from(el, { opacity: 0, y: 28, duration: 0.7, ease: "power2.out", delay: i * 0.1,
-            scrollTrigger: { trigger: el, start: "top 88%" } });
+        // Milestone cards slide in one by one.
+        gsap.utils.toArray(".tl-item").forEach(function (el) {
+          gsap.from(el, { opacity: 0, x: -24, duration: 0.6, ease: "power2.out",
+            scrollTrigger: { trigger: el, start: "top 90%" } });
         });
 
-        // Product previews fade in (transform left to the CSS float).
-        gsap.utils.toArray(".preview").forEach((el) => {
-          gsap.from(el, { opacity: 0, duration: 0.9, ease: "power2.out",
-            scrollTrigger: { trigger: el, start: "top 92%" } });
+        window.addEventListener("resize", function () {
+          fill.style.height = progressFillHeight() + "px";
         });
+      } else {
+        fill.style.height = target + "px";
       }
     } catch (e) { /* animations are optional; content stays visible */ }
   </script>
