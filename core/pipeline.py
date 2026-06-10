@@ -3,6 +3,8 @@ TicketCoach Core Pipeline
 3-step LLM pipeline: ticket generation → script extraction → quality review
 """
 
+import contextvars
+import datetime
 import json
 import os
 import random
@@ -35,6 +37,48 @@ from core.prompts import (
 
 # Load .env file from project root
 load_dotenv()
+
+# ---------------------------------------------------------------------------
+# Trace hook (for the eval harness; no-op in normal operation)
+# ---------------------------------------------------------------------------
+# When a collector (any object with .append) is installed via set_trace_collector,
+# every LLM call records one event dict into it. When it is None (default),
+# behavior is exactly as before.
+
+_trace_collector: contextvars.ContextVar = contextvars.ContextVar(
+    "ticketcoach_trace_collector", default=None
+)
+
+
+def set_trace_collector(collector) -> None:
+    """Install (or remove, with None) a list-like trace collector."""
+    _trace_collector.set(collector)
+
+
+def _record_trace(event: dict) -> None:
+    collector = _trace_collector.get()
+    if collector is not None:
+        event.setdefault("ts", datetime.datetime.now().isoformat(timespec="seconds"))
+        collector.append(event)
+
+
+def _infer_step(system: str) -> str:
+    """Map a system prompt back to its pipeline step name, for trace labeling."""
+    exact = {
+        TICKET_SYSTEM_PROMPT: "generate_ticket",
+        SCRIPT_SYSTEM_PROMPT: "ticket_to_script",
+        REVIEW_SYSTEM_PROMPT: "review_script",
+        EVALUATE_SYSTEM_PROMPT: "evaluate_session",
+        NORMALIZE_TICKET_SYSTEM_PROMPT: "normalize_ticket",
+    }
+    if system in exact:
+        return exact[system]
+    if "【对练引擎规则】" in system:
+        return "chat_reply"
+    if system.startswith("你是一名优秀的阿里云客服"):
+        return "agent_reply"
+    return "unknown"
+
 
 # ---------------------------------------------------------------------------
 # LLM client setup
@@ -89,10 +133,24 @@ def _raw_chat(messages: list, json_mode: bool = False, temperature: float = 0.8)
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
 
+    event = {
+        "event": "llm_call",
+        "step": _infer_step(messages[0]["content"] if messages else ""),
+        "model": model,
+        "json_mode": json_mode,
+        "temperature": temperature,
+        "messages": messages,
+    }
+    start = time.time()
     try:
         response = client.chat.completions.create(**kwargs)
-        return response.choices[0].message.content or ""
+        raw = response.choices[0].message.content or ""
+        event.update(raw_response=raw, latency_ms=int((time.time() - start) * 1000))
+        _record_trace(event)
+        return raw
     except openai.OpenAIError as e:
+        event.update(error=str(e), latency_ms=int((time.time() - start) * 1000))
+        _record_trace(event)
         raise RuntimeError(f"LLM API error: {e}")
 
 
@@ -117,6 +175,7 @@ def call_llm(system: str, user: str, json_mode: bool = True) -> dict:
         except json.JSONDecodeError as e:
             if attempt == 0:
                 print(f"[pipeline] JSON parse error on attempt 1, retrying... ({e})")
+                _record_trace({"event": "json_retry", "error": str(e), "raw_response": raw[:500]})
                 time.sleep(1)
                 continue
             raise ValueError(
@@ -427,6 +486,7 @@ def run_pipeline(params: Optional[dict] = None) -> dict:
     overall_score = review.get("overall_score", 100)
     if isinstance(overall_score, (int, float)) and overall_score < 60:
         print(f"[pipeline] Score {overall_score} < 60, regenerating script (quality loop)...")
+        _record_trace({"event": "quality_loop_triggered", "first_score": overall_score})
         script = ticket_to_script(ticket)
         review = review_script(ticket, script)
         print(f"[pipeline] After regeneration, new score: {review.get('overall_score', 'N/A')}")

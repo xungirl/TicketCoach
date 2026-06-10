@@ -13,3 +13,6 @@ build/
 
 # 含口令，仅本地/钉钉使用，不提交
 docs/钉钉文档.md
+
+# eval harness outputs (traces may contain prompts)
+evals/runs/
