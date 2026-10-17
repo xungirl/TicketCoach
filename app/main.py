@@ -18,7 +18,10 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from core import llm
+from core import auth, llm
+from core.agent import ToolContext, coach_reply
+from core.kb import get_kb
+from core.memory import get_memory
 from core.obs import setup_logging
 from core.pipeline import (
     run_pipeline,
@@ -127,6 +130,7 @@ class ChatRequest(BaseModel):
 class EvaluateRequest(BaseModel):
     script: dict
     transcript: list[ChatTurn]
+    business_type: Optional[str] = None  # stored in trainee memory when logged in
 
 
 class AgentStreamRequest(BaseModel):
@@ -138,6 +142,21 @@ class ScriptFromTicketRequest(BaseModel):
     ticket_text: Optional[str] = None   # raw pasted ticket text
     ticket: Optional[dict] = None       # or an already-structured ticket
     review: bool = True                 # also run quality check
+
+
+class LoginRequest(BaseModel):
+    name: str
+    access_code: Optional[str] = None
+
+
+class CoachTurn(BaseModel):
+    role: str  # "user" or "assistant"
+    content: str
+
+
+class CoachRequest(BaseModel):
+    message: str
+    history: list[CoachTurn] = []
 
 
 class BatchScriptsRequest(BaseModel):
@@ -157,6 +176,18 @@ def require_access(x_access_token: Optional[str] = Header(default=None)):
     expected = os.environ.get("ACCESS_PASSWORD")
     if expected and x_access_token != expected:
         raise HTTPException(status_code=401, detail="访问口令错误或缺失")
+
+
+def require_trainee(x_trainee_token: Optional[str] = Header(default=None)) -> str:
+    """Resolve the signed trainee token to a trainee id (401 if missing/forged)."""
+    tid = auth.verify_token(x_trainee_token)
+    if not tid:
+        raise HTTPException(status_code=401, detail="请先登录（输入姓名和访问口令）")
+    return tid
+
+
+def optional_trainee(x_trainee_token: Optional[str] = Header(default=None)) -> Optional[str]:
+    return auth.verify_token(x_trainee_token)
 
 
 # ---------------------------------------------------------------------------
@@ -187,6 +218,23 @@ def enforce_quota(n: int = 1):
                 detail=f"今日生成额度已用完（每日上限 {limit} 次），请明天再试",
             )
         _quota_state["count"] += n
+
+
+# Per-trainee daily cap on coach turns (each turn = 1-7 LLM calls).
+_coach_quota: dict = {}
+
+
+def enforce_coach_quota(trainee_id: str):
+    limit = int(os.environ.get("COACH_DAILY_LIMIT", "50"))
+    if limit <= 0:
+        return
+    key = (trainee_id, time.strftime("%Y-%m-%d", time.gmtime()))
+    with _quota_lock:
+        if len(_coach_quota) > 10000:
+            _coach_quota.clear()
+        if _coach_quota.get(key, 0) >= limit:
+            raise HTTPException(status_code=429, detail=f"今日教练提问次数已达上限（{limit} 次）")
+        _coach_quota[key] = _coach_quota.get(key, 0) + 1
 
 
 # ---------------------------------------------------------------------------
@@ -371,7 +419,7 @@ def agent_stream(body: AgentStreamRequest):
 
 
 @app.post("/api/evaluate", dependencies=[Depends(require_access)])
-def evaluate(body: EvaluateRequest):
+def evaluate(body: EvaluateRequest, trainee_id: Optional[str] = Depends(optional_trainee)):
     """
     Score the trainee's (agent's) performance after a roleplay session, using
     the script's scoring_criteria. Returns a review-style dict.
@@ -381,6 +429,14 @@ def evaluate(body: EvaluateRequest):
         if not any(t["role"] == "agent" for t in transcript):
             return JSONResponse(status_code=400, content={"error": "对练记录中没有客服发言，无法评分"})
         result = evaluate_session(body.script, transcript)
+        if trainee_id:
+            # Long-term memory: the coach agent reads this back later.
+            try:
+                get_memory().record_session(trainee_id, body.script, result,
+                                            business_type=body.business_type or "")
+                result["saved_to_profile"] = True
+            except Exception as e:
+                log.warning("memory_write_failed", extra={"fields": {"error": str(e)[:200]}})
         return JSONResponse(content=result)
     except ValueError as e:
         return JSONResponse(status_code=500, content={"error": f"评分解析失败: {str(e)}"})
@@ -529,6 +585,52 @@ def library_add(entry: dict):
         return JSONResponse(status_code=400, content={"error": "缺少 script 字段"})
     LIBRARY.append(entry)
     return {"id": len(LIBRARY) - 1, "count": len(LIBRARY)}
+
+
+# ---------------------------------------------------------------------------
+# Trainee login + coach agent + memory
+# ---------------------------------------------------------------------------
+
+@app.post("/api/login")
+def login(body: LoginRequest):
+    """Exchange (name, access code) for a signed trainee token."""
+    expected = os.environ.get("ACCESS_PASSWORD")
+    if expected and body.access_code != expected:
+        raise HTTPException(status_code=401, detail="访问口令错误")
+    name = body.name.strip()[:40]
+    try:
+        tid = auth.trainee_id_for(name)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="请输入姓名")
+    return {"token": auth.issue_token(tid), "trainee_id": tid, "name": name}
+
+
+@app.post("/api/coach")
+def coach(body: CoachRequest, trainee_id: str = Depends(require_trainee)):
+    """One turn with the coach agent (tool calling + RAG + memory)."""
+    msg = body.message.strip()
+    if not msg:
+        return JSONResponse(status_code=400, content={"error": "请输入问题"})
+    enforce_coach_quota(trainee_id)
+    ctx = ToolContext(trainee_id=trainee_id, kb=get_kb(), memory=get_memory(),
+                      library=LIBRARY, business_types=BUSINESS_TYPES)
+    try:
+        return coach_reply(ctx, msg[:1000], [t.model_dump() for t in body.history])
+    except (RuntimeError, llm.LLMUnavailable) as e:
+        return JSONResponse(status_code=503, content={"error": f"模型暂时不可用，请稍后再试（{str(e)[:200]}）"})
+
+
+@app.get("/api/me/profile")
+def my_profile(trainee_id: str = Depends(require_trainee)):
+    """What the coach remembers about me."""
+    return get_memory().profile(trainee_id, BUSINESS_TYPES)
+
+
+@app.delete("/api/me")
+def forget_me(trainee_id: str = Depends(require_trainee)):
+    """Delete all stored sessions and notes for the current trainee."""
+    get_memory().forget(trainee_id)
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------------------
