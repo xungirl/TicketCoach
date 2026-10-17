@@ -4,9 +4,11 @@ Serves the frontend and exposes the pipeline API endpoints.
 """
 
 import json
+import logging
 import os
 import threading
 import time
+import uuid
 from pathlib import Path
 from typing import Optional
 
@@ -16,6 +18,8 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from core import llm
+from core.obs import setup_logging
 from core.pipeline import (
     run_pipeline,
     chat_reply,
@@ -40,6 +44,32 @@ app = FastAPI(
     description="Customer service ticket → AI training script generator",
     version="1.0.0",
 )
+
+setup_logging()
+log = logging.getLogger("ticketcoach.api")
+
+
+@app.middleware("http")
+async def request_context(request: Request, call_next):
+    """Tag every request with an id (echoed in X-Request-ID and in every log
+    line it produces) and emit one access-log line with status + latency."""
+    rid = request.headers.get("x-request-id") or uuid.uuid4().hex[:12]
+    token = llm.request_id_var.set(rid)
+    start = time.time()
+    status = 500
+    try:
+        response = await call_next(request)
+        status = response.status_code
+        response.headers["X-Request-ID"] = rid
+        return response
+    finally:
+        if request.url.path.startswith("/api/"):
+            log.info("http_request", extra={"fields": {
+                "request_id": rid, "method": request.method, "path": request.url.path,
+                "status": status, "latency_ms": int((time.time() - start) * 1000),
+            }})
+        llm.request_id_var.reset(token)
+
 
 # Allow all origins for demo / development
 app.add_middleware(
@@ -307,8 +337,10 @@ def chat_stream(body: ChatRequest):
     (text/plain chunks) for a real-time typing effect. Same inputs as /api/chat.
     """
     history = [t.model_dump() for t in body.history]
+    rid = llm.request_id_var.get()  # the body streams after the middleware returns
 
     def generate_stream():
+        llm.request_id_var.set(rid)
         try:
             for piece in chat_reply_stream(body.actor_prompt, history):
                 yield piece
@@ -325,8 +357,10 @@ def agent_stream(body: AgentStreamRequest):
     agent responds (guided by the script), streamed token-by-token.
     """
     history = [t.model_dump() for t in body.history]
+    rid = llm.request_id_var.get()  # the body streams after the middleware returns
 
     def generate_stream():
+        llm.request_id_var.set(rid)
         try:
             for piece in agent_reply_stream(body.script, history):
                 yield piece
@@ -495,6 +529,16 @@ def library_add(entry: dict):
         return JSONResponse(status_code=400, content={"error": "缺少 script 字段"})
     LIBRARY.append(entry)
     return {"id": len(LIBRARY) - 1, "count": len(LIBRARY)}
+
+
+# ---------------------------------------------------------------------------
+# Metrics (tokens / cost / latency / fallbacks since process start)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/metrics", dependencies=[Depends(require_access)])
+def metrics():
+    """Per-model and per-step usage: calls, errors, tokens, est. cost, p50/p95."""
+    return llm.METRICS.snapshot()
 
 
 # ---------------------------------------------------------------------------

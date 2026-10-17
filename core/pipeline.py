@@ -3,8 +3,6 @@ TicketCoach Core Pipeline
 3-step LLM pipeline: ticket generation → script extraction → quality review
 """
 
-import contextvars
-import datetime
 import json
 import os
 import random
@@ -13,13 +11,13 @@ import sys
 import time
 from typing import Optional
 
-import openai
 from dotenv import load_dotenv
 
 # Allow running this file directly (`python core/pipeline.py`) by adding the
 # project root to sys.path, so the `core` package can be imported either way.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from core import llm
 from core.prompts import (
     TICKET_SYSTEM_PROMPT,
     TICKET_USER_TEMPLATE,
@@ -38,28 +36,9 @@ from core.prompts import (
 # Load .env file from project root
 load_dotenv()
 
-# ---------------------------------------------------------------------------
-# Trace hook (for the eval harness; no-op in normal operation)
-# ---------------------------------------------------------------------------
-# When a collector (any object with .append) is installed via set_trace_collector,
-# every LLM call records one event dict into it. When it is None (default),
-# behavior is exactly as before.
-
-_trace_collector: contextvars.ContextVar = contextvars.ContextVar(
-    "ticketcoach_trace_collector", default=None
-)
-
-
-def set_trace_collector(collector) -> None:
-    """Install (or remove, with None) a list-like trace collector."""
-    _trace_collector.set(collector)
-
-
-def _record_trace(event: dict) -> None:
-    collector = _trace_collector.get()
-    if collector is not None:
-        event.setdefault("ts", datetime.datetime.now().isoformat(timespec="seconds"))
-        collector.append(event)
+# Trace hook lives in core.llm now; re-exported so evals keep importing it here.
+set_trace_collector = llm.set_trace_collector
+_record_trace = llm.record_trace
 
 
 def _infer_step(system: str) -> str:
@@ -81,29 +60,15 @@ def _infer_step(system: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# LLM client setup
+# LLM client setup (fallbacks, retries, metrics and logs live in core.llm)
 # ---------------------------------------------------------------------------
 
-def get_client() -> openai.OpenAI:
-    """Read env vars LLM_API_KEY, LLM_BASE_URL, LLM_MODEL, return openai.OpenAI client."""
-    api_key = os.environ.get("LLM_API_KEY")
-    base_url = os.environ.get("LLM_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
-
-    if not api_key:
-        raise ValueError("LLM_API_KEY environment variable is not set. Please check your .env file.")
-
-    return openai.OpenAI(
-        api_key=api_key,
-        base_url=base_url,
-        # Stronger models (e.g. qwen-max / reasoning models) need more headroom
-        # for long generations; configurable via LLM_TIMEOUT env var.
-        timeout=float(os.environ.get("LLM_TIMEOUT", "180")),
-    )
+get_client = llm.get_client
 
 
 def _get_model() -> str:
-    """Return model name from env, default to qwen-plus."""
-    return os.environ.get("LLM_MODEL", "qwen-plus")
+    """Return the primary model name from env, default to qwen-plus."""
+    return llm.primary_model()
 
 
 def _strip_markdown_fences(text: str) -> str:
@@ -122,35 +87,10 @@ def _raw_chat(messages: list, json_mode: bool = False, temperature: float = 0.8)
     Low-level chat completion: takes a full messages list, returns raw text.
     Shared by both the JSON pipeline calls and the free-text roleplay engine.
     """
-    client = get_client()
-    model = _get_model()
-
-    kwargs = {
-        "model": model,
-        "messages": messages,
-        "temperature": temperature,
-    }
-    if json_mode:
-        kwargs["response_format"] = {"type": "json_object"}
-
-    event = {
-        "event": "llm_call",
-        "step": _infer_step(messages[0]["content"] if messages else ""),
-        "model": model,
-        "json_mode": json_mode,
-        "temperature": temperature,
-        "messages": messages,
-    }
-    start = time.time()
+    step = _infer_step(messages[0]["content"] if messages else "")
     try:
-        response = client.chat.completions.create(**kwargs)
-        raw = response.choices[0].message.content or ""
-        event.update(raw_response=raw, latency_ms=int((time.time() - start) * 1000))
-        _record_trace(event)
-        return raw
-    except openai.OpenAIError as e:
-        event.update(error=str(e), latency_ms=int((time.time() - start) * 1000))
-        _record_trace(event)
+        return llm.chat(messages, step=step, json_mode=json_mode, temperature=temperature).content
+    except llm.LLMUnavailable as e:
         raise RuntimeError(f"LLM API error: {e}")
 
 
@@ -382,17 +322,7 @@ def chat_reply_stream(actor_prompt: str, history: list):
             "content": "（系统提示：对练现在开始，请你作为这位客户主动说出第一句话，开启对话。只说客户会说的话。）",
         })
 
-    client = get_client()
-    model = _get_model()
-    stream = client.chat.completions.create(
-        model=model, messages=messages, temperature=0.9, stream=True,
-    )
-    for chunk in stream:
-        if not chunk.choices:
-            continue
-        delta = chunk.choices[0].delta
-        if delta and getattr(delta, "content", None):
-            yield delta.content
+    yield from llm.stream(messages, step="chat_reply", temperature=0.9)
 
 
 def agent_reply_stream(script: dict, history: list):
@@ -410,17 +340,7 @@ def agent_reply_stream(script: dict, history: list):
         role = "assistant" if turn.get("role") == "agent" else "user"
         messages.append({"role": role, "content": turn.get("text", "")})
 
-    client = get_client()
-    model = _get_model()
-    stream = client.chat.completions.create(
-        model=model, messages=messages, temperature=0.7, stream=True,
-    )
-    for chunk in stream:
-        if not chunk.choices:
-            continue
-        delta = chunk.choices[0].delta
-        if delta and getattr(delta, "content", None):
-            yield delta.content
+    yield from llm.stream(messages, step="agent_reply", temperature=0.7)
 
 
 def _format_transcript(transcript: list) -> str:
