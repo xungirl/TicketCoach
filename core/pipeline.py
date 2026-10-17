@@ -17,7 +17,17 @@ from dotenv import load_dotenv
 # project root to sys.path, so the `core` package can be imported either way.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from pydantic import ValidationError
+
 from core import llm
+from core.schemas import (
+    NormalizedTicket,
+    Review,
+    Script,
+    SessionEvaluation,
+    Ticket,
+    format_errors,
+)
 from core.prompts import (
     TICKET_SYSTEM_PROMPT,
     TICKET_USER_TEMPLATE,
@@ -94,13 +104,16 @@ def _raw_chat(messages: list, json_mode: bool = False, temperature: float = 0.8)
         raise RuntimeError(f"LLM API error: {e}")
 
 
-def call_llm(system: str, user: str, json_mode: bool = True) -> dict:
+def call_llm(system: str, user: str, json_mode: bool = True,
+             schema: Optional[type] = None) -> dict:
     """
     Single system+user LLM call returning a parsed dict.
     - Uses response_format={"type": "json_object"} when json_mode=True
     - Strips markdown code blocks if present
-    - On JSON parse failure, retries once
-    - Returns parsed dict
+    - If `schema` (a pydantic model) is given, validates the shape too
+    - On a parse or validation failure, retries once — feeding the error back
+      so the model repairs its own output instead of rolling the dice again
+    - Returns the parsed (and normalized, if validated) dict
     """
     messages = [
         {"role": "system", "content": system},
@@ -111,16 +124,24 @@ def call_llm(system: str, user: str, json_mode: bool = True) -> dict:
     for attempt in range(2):  # try up to 2 times
         raw = _raw_chat(messages, json_mode=json_mode)
         try:
-            return json.loads(_strip_markdown_fences(raw))
-        except json.JSONDecodeError as e:
+            data = json.loads(_strip_markdown_fences(raw))
+            if schema is not None:
+                data = schema.model_validate(data).model_dump()
+            return data
+        except (json.JSONDecodeError, ValidationError) as e:
+            problem = (f"不是合法 JSON：{e}" if isinstance(e, json.JSONDecodeError)
+                       else "不符合要求的字段结构：\n" + format_errors(e))
             if attempt == 0:
-                print(f"[pipeline] JSON parse error on attempt 1, retrying... ({e})")
-                _record_trace({"event": "json_retry", "error": str(e), "raw_response": raw[:500]})
-                time.sleep(1)
+                print(f"[pipeline] Output invalid on attempt 1, asking model to repair... ({problem[:120]})")
+                _record_trace({"event": "json_retry", "error": problem, "raw_response": raw[:500]})
+                messages = messages + [
+                    {"role": "assistant", "content": raw},
+                    {"role": "user", "content": f"你上面的输出{problem}\n请修正后只输出完整的 JSON，不要任何解释。"},
+                ]
                 continue
             raise ValueError(
-                f"Failed to parse LLM JSON response after 2 attempts. "
-                f"Last error: {e}\nRaw response: {raw[:500]}"
+                f"Failed to get a valid LLM JSON response after 2 attempts. "
+                f"Last error: {problem}\nRaw response: {raw[:500]}"
             )
 
 
@@ -195,7 +216,7 @@ def generate_ticket(params: dict) -> dict:
         difficulty=params.get("difficulty", "中"),
     )
     print(f"[pipeline] Step 1: Generating ticket (type={params.get('business_type')}, emotion={params.get('emotion')})...")
-    ticket = call_llm(TICKET_SYSTEM_PROMPT, user_msg, json_mode=True)
+    ticket = call_llm(TICKET_SYSTEM_PROMPT, user_msg, json_mode=True, schema=Ticket)
     print(f"[pipeline] Step 1 done. ticket_id={ticket.get('ticket_id', 'N/A')}")
     return ticket
 
@@ -208,7 +229,7 @@ def ticket_to_script(ticket: dict) -> dict:
     ticket_json_str = json.dumps(ticket, ensure_ascii=False, indent=2)
     user_msg = SCRIPT_USER_TEMPLATE.format(ticket_json=ticket_json_str)
     print(f"[pipeline] Step 2: Extracting training script from ticket...")
-    script = call_llm(SCRIPT_SYSTEM_PROMPT, user_msg, json_mode=True)
+    script = call_llm(SCRIPT_SYSTEM_PROMPT, user_msg, json_mode=True, schema=Script)
     print(f"[pipeline] Step 2 done. title={script.get('title', 'N/A')[:40]}")
     return script
 
@@ -225,7 +246,7 @@ def review_script(ticket: dict, script: dict) -> dict:
         script_json=script_json_str,
     )
     print(f"[pipeline] Step 3: Reviewing script quality...")
-    review = call_llm(REVIEW_SYSTEM_PROMPT, user_msg, json_mode=True)
+    review = call_llm(REVIEW_SYSTEM_PROMPT, user_msg, json_mode=True, schema=Review)
     score = review.get("overall_score", "N/A")
     print(f"[pipeline] Step 3 done. overall_score={score}")
     return review
@@ -258,7 +279,8 @@ def normalize_ticket_from_text(raw_ticket: str) -> dict:
     structured ticket JSON, without fabricating missing info.
     """
     user_msg = NORMALIZE_TICKET_USER_TEMPLATE.format(raw_ticket=raw_ticket)
-    ticket = call_llm(NORMALIZE_TICKET_SYSTEM_PROMPT, user_msg, json_mode=True)
+    ticket = call_llm(NORMALIZE_TICKET_SYSTEM_PROMPT, user_msg, json_mode=True,
+                      schema=NormalizedTicket)
     return _fill_ticket_defaults(ticket)
 
 
@@ -362,7 +384,8 @@ def evaluate_session(script: dict, transcript: list) -> dict:
         transcript=_format_transcript(transcript),
     )
     print(f"[pipeline] Evaluating roleplay session ({len(transcript)} turns)...")
-    result = call_llm(EVALUATE_SYSTEM_PROMPT, user_msg, json_mode=True)
+    result = call_llm(EVALUATE_SYSTEM_PROMPT, user_msg, json_mode=True,
+                      schema=SessionEvaluation)
     print(f"[pipeline] Evaluation done. overall_score={result.get('overall_score', 'N/A')}")
     return result
 
