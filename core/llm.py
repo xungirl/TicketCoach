@@ -108,6 +108,17 @@ def model_chain(primary: Optional[str] = None) -> list:
     return chain
 
 
+def step_model(step: str) -> Optional[str]:
+    """Per-step model tiering from LLM_STEP_MODELS (JSON), e.g.
+    {"review_script": "qwen-flash", "coach": "qwen-plus"}: cheap/fast models for
+    easy steps, the strong one only where quality matters. The rest of the
+    fallback chain still applies after it."""
+    try:
+        return json.loads(os.environ.get("LLM_STEP_MODELS", "{}")).get(step)
+    except (json.JSONDecodeError, AttributeError):
+        return None
+
+
 def _prices() -> dict:
     """{model: [input_per_1M, output_per_1M]} in CNY, from LLM_PRICES (JSON).
 
@@ -371,7 +382,7 @@ def chat(messages: list, *, step: str = "unknown", json_mode: bool = False,
          model: Optional[str] = None) -> ChatResult:
     """One chat completion with fallbacks. Raises LLMUnavailable if all fail."""
     errors = []
-    for depth, provider, m, has_next in _attempts(model_chain(model)):
+    for depth, provider, m, has_next in _attempts(model_chain(model or step_model(step))):
         label = _label(provider, m)
         kwargs = {"model": m, "messages": messages, "temperature": temperature}
         if json_mode:
@@ -438,7 +449,7 @@ def stream(messages: list, *, step: str = "unknown", temperature: float = 0.8,
     out, switching models mid-sentence would produce a garbled reply.
     """
     errors = []
-    for depth, provider, m, has_next in _attempts(model_chain(model)):
+    for depth, provider, m, has_next in _attempts(model_chain(model or step_model(step))):
         label = _label(provider, m)
         start = time.time()
         first_token_ms = None

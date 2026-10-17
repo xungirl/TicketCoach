@@ -122,3 +122,10 @@ def test_chain_parsing(monkeypatch):
     monkeypatch.setenv("LLM_FALLBACK_MODELS", "b, a ,gemini:g,unknown:z")
     monkeypatch.setenv("GEMINI_API_KEY", "x")
     assert llm.model_chain() == [("default", "a"), ("default", "b"), ("gemini", "g")]
+
+
+def test_step_model_tiering(fake, monkeypatch):
+    monkeypatch.setenv("LLM_STEP_MODELS", '{"review_script": "cheap"}')
+    r = llm.chat([{"role": "user", "content": "x"}], step="review_script")
+    assert r.model == "cheap"
+    assert llm.chat([{"role": "user", "content": "x"}], step="coach").model == "primary"

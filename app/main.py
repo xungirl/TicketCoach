@@ -3,6 +3,7 @@ TicketCoach FastAPI Application
 Serves the frontend and exposes the pipeline API endpoints.
 """
 
+import contextvars
 import json
 import logging
 import os
@@ -11,6 +12,8 @@ import time
 import uuid
 from pathlib import Path
 from typing import Optional
+
+from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import FastAPI, HTTPException, Query, Request, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -238,6 +241,30 @@ def enforce_coach_quota(trainee_id: str):
 
 
 # ---------------------------------------------------------------------------
+# Bounded parallelism for batch endpoints
+# ---------------------------------------------------------------------------
+# LLM calls are I/O-bound, so threads are enough. Results keep input order;
+# each item's exception is returned (not raised) so one failure doesn't sink
+# the batch. contextvars are copied so logs keep the request id.
+
+def _parallel_map(fn, items: list) -> list:
+    """[(result, None) | (None, exception)] in input order."""
+    workers = max(1, int(os.environ.get("BATCH_CONCURRENCY", "3")))
+
+    def safe(item):
+        try:
+            return fn(item), None
+        except Exception as e:
+            return None, e
+
+    if workers == 1 or len(items) <= 1:
+        return [safe(i) for i in items]
+    with ThreadPoolExecutor(max_workers=min(workers, len(items))) as pool:
+        futures = [pool.submit(contextvars.copy_context().run, safe, i) for i in items]
+        return [f.result() for f in futures]
+
+
+# ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
 
@@ -307,22 +334,20 @@ def generate(body: GenerateRequest):
 @app.post("/api/batch", dependencies=[Depends(require_access)])
 def batch_generate(n: int = Query(default=3, ge=1, le=5)):
     """
-    Run n pipelines sequentially and return results + basic stats.
+    Run n pipelines (BATCH_CONCURRENCY at a time) and return results + basic stats.
     Stats include: avg_score, business_type distribution, difficulty distribution.
     """
     enforce_quota(n)
     results = []
     errors = []
 
-    for i in range(n):
-        try:
-            print(f"[batch] Running pipeline {i + 1}/{n}...")
-            result = run_pipeline()
+    started = time.time()
+    for i, (result, err) in enumerate(_parallel_map(lambda _: run_pipeline(), list(range(n)))):
+        if err is None:
             results.append(result)
-        except Exception as e:
-            error_msg = str(e)
-            print(f"[batch] Pipeline {i + 1} failed: {error_msg}")
-            errors.append({"index": i + 1, "error": error_msg})
+        else:
+            print(f"[batch] Pipeline {i + 1} failed: {err}")
+            errors.append({"index": i + 1, "error": str(err)})
 
     # Compute stats
     scores = [
@@ -348,6 +373,7 @@ def batch_generate(n: int = Query(default=3, ge=1, le=5)):
         "avg_score": avg_score,
         "business_type_distribution": business_dist,
         "difficulty_distribution": difficulty_dist,
+        "wall_time_s": round(time.time() - started, 1),
     }
 
     return JSONResponse(content={
@@ -526,17 +552,20 @@ def batch_scripts(body: BatchScriptsRequest):
 
     enforce_quota(len(items))
 
+    def one(item):
+        ticket = coerce_ticket(item)
+        script = ticket_to_script(ticket)
+        entry = {"ticket": ticket, "script": script}
+        if body.review:
+            entry["review"] = review_script(ticket, script)
+        return entry
+
     results, errors = [], []
-    for i, item in enumerate(items):
-        try:
-            ticket = coerce_ticket(item)
-            script = ticket_to_script(ticket)
-            entry = {"ticket": ticket, "script": script}
-            if body.review:
-                entry["review"] = review_script(ticket, script)
+    for i, (entry, err) in enumerate(_parallel_map(one, items)):
+        if err is None:
             results.append(entry)
-        except Exception as e:
-            errors.append({"index": i + 1, "error": str(e)})
+        else:
+            errors.append({"index": i + 1, "error": str(err)})
 
     return JSONResponse(content={
         "count": len(results),
