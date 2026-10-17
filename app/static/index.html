@@ -233,11 +233,52 @@
     </div>
   </div>
 
+  <!-- Coach agent drawer -->
+  <button class="coach-fab" id="coach-fab" onclick="openCoach()" aria-label="打开 AI 教练">
+    <span class="coach-fab-icon">🧑‍🏫</span><span class="coach-fab-text">AI 教练</span>
+  </button>
+  <aside class="coach-drawer" id="coach-drawer" aria-hidden="true">
+    <div class="coach-head">
+      <div>
+        <div class="coach-title">AI 教练</div>
+        <div class="coach-sub" id="coach-sub">查官方文档 · 记得你的练习 · 推荐剧本</div>
+      </div>
+      <button class="roleplay-close" onclick="closeCoach()" aria-label="关闭">✕</button>
+    </div>
+
+    <form class="coach-login" id="coach-login" onsubmit="coachLogin(event)">
+      <p class="coach-login-hint">登录后，教练会记住你每次对练的得分和薄弱点。</p>
+      <label>你的名字<input id="coach-name" maxlength="40" required placeholder="例如：小王" /></label>
+      <label>访问口令<input id="coach-code" type="password" placeholder="本地开发可留空" /></label>
+      <button class="btn-primary" type="submit">开始</button>
+    </form>
+
+    <div class="coach-main" id="coach-main" style="display:none;">
+      <div class="coach-profile" id="coach-profile"></div>
+      <div class="coach-messages" id="coach-messages"></div>
+      <div class="coach-quick" id="coach-quick">
+        <button onclick="coachAsk(this.textContent)">我最近哪里最弱？</button>
+        <button onclick="coachAsk(this.textContent)">客户说 SSH 连不上，我该怎么一步步排查？</button>
+        <button onclick="coachAsk(this.textContent)">推荐一个高难度的剧本给我练</button>
+      </div>
+      <form class="coach-input-row" onsubmit="coachSubmit(event)">
+        <textarea id="coach-input" rows="2" placeholder="问教练任何工单问题，回车发送" onkeydown="coachKey(event)"></textarea>
+        <button class="btn-primary" id="coach-send" type="submit">发送</button>
+      </form>
+      <div class="coach-foot">
+        <span id="coach-who"></span>
+        <button class="coach-link" onclick="coachForget()">清除我的数据</button>
+        <button class="coach-link" onclick="coachLogout()">退出</button>
+      </div>
+    </div>
+  </aside>
+
   <footer class="site-footer">
     <p>TicketCoach · 由 Qwen 与 Google 云提供技术支持</p>
   </footer>
 
   <script src="/static/app.js"></script>
+  <script src="/static/coach.js"></script>
   <script>
     // Load dropdown options + script library on page load
     window.addEventListener('DOMContentLoaded', () => { loadOptions(); loadLibrary(); });

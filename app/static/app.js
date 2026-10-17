@@ -64,6 +64,9 @@ async function apiFetch(url, options = {}) {
   const headers = Object.assign({}, options.headers || {});
   const token = localStorage.getItem("tc_access_token");
   if (token) headers["X-Access-Token"] = token;
+  // Signed trainee token (see coach.js): lets the server tie scores to a trainee.
+  const trainee = localStorage.getItem("tc_trainee_token");
+  if (trainee) headers["X-Trainee-Token"] = trainee;
 
   let res = await fetch(url, Object.assign({}, options, { headers }));
   if (res.status === 401) {
@@ -891,7 +894,11 @@ async function endAndEvaluate() {
     const res = await apiFetch("/api/evaluate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ script: currentScript, transcript: roleplayHistory }),
+      body: JSON.stringify({
+        script: currentScript, transcript: roleplayHistory,
+        business_type: (lastShown && ((lastShown.ticket && lastShown.ticket.business_type)
+          || (lastShown.params && lastShown.params.business_type))) || null,
+      }),
     });
     const data = await res.json();
     if (!res.ok || data.error) {
@@ -899,6 +906,11 @@ async function endAndEvaluate() {
       return;
     }
     renderEvalResult(data);
+    if (data.saved_to_profile) {
+      evalBody.insertAdjacentHTML("afterbegin",
+        `<div class="coach-saved-note">📒 已记入你的成长档案，可以去问「AI 教练」下一步练什么</div>`);
+      if (typeof coachRefreshProfile === "function") coachRefreshProfile();
+    }
   } catch (e) {
     evalBody.innerHTML = `<div class="placeholder-msg">评分出错：${esc(e.message)}</div>`;
   }

@@ -1061,3 +1061,116 @@ ul { list-style: none; }
   background: rgba(100, 116, 139, 0.35);
   border-radius: 20px;
 }
+
+/* =============================================
+   AI coach drawer
+   ============================================= */
+.coach-fab {
+  position: fixed; right: 24px; bottom: 24px; z-index: 900;
+  display: inline-flex; align-items: center; gap: 0.45rem;
+  padding: 0.75rem 1.1rem; border: none; border-radius: 999px; cursor: pointer;
+  background: var(--gradient-brand); color: #fff; font: 600 0.95rem var(--font-sans);
+  box-shadow: 0 8px 24px rgba(124, 58, 237, 0.35); transition: transform var(--transition);
+}
+.coach-fab:hover { transform: translateY(-2px); }
+.coach-fab-icon { font-size: 1.15rem; }
+
+.coach-drawer {
+  position: fixed; top: 0; right: 0; bottom: 0; z-index: 950;
+  width: min(440px, 100vw); display: flex; flex-direction: column;
+  background: var(--color-surface); box-shadow: -12px 0 32px rgba(16, 24, 40, 0.16);
+  transform: translateX(105%); transition: transform 0.25s ease;
+}
+.coach-drawer.open { transform: translateX(0); }
+.coach-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  padding: 1rem 1.1rem; border-bottom: 1px solid var(--color-border);
+}
+.coach-title { font-weight: 700; font-size: 1.1rem; }
+.coach-sub { color: var(--color-text-muted); font-size: 0.82rem; margin-top: 0.15rem; }
+
+.coach-login { display: flex; flex-direction: column; gap: 0.8rem; padding: 1.25rem 1.1rem; }
+.coach-login label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.85rem; color: var(--color-text-muted); }
+.coach-login input {
+  padding: 0.6rem 0.7rem; border: 1px solid var(--color-border-dark); border-radius: var(--radius-sm);
+  font: 0.95rem var(--font-sans); color: var(--color-text);
+}
+.coach-login-hint { font-size: 0.88rem; color: var(--color-text-muted); }
+
+.coach-main { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.coach-profile {
+  display: flex; flex-wrap: wrap; gap: 0.4rem; padding: 0.65rem 1.1rem;
+  background: var(--color-primary-light); font-size: 0.8rem;
+}
+.coach-stat { color: var(--color-text-muted); }
+.coach-stat b { color: var(--color-text); }
+.coach-stat.up { color: var(--color-success); font-weight: 600; }
+.coach-stat.down { color: var(--color-danger); font-weight: 600; }
+.coach-stat + .coach-stat::before { content: "·"; margin-right: 0.4rem; color: var(--color-text-light); }
+
+.coach-messages { flex: 1; overflow-y: auto; padding: 1rem 1.1rem; display: flex; flex-direction: column; gap: 0.8rem; }
+.coach-msg { display: flex; flex-direction: column; gap: 0.35rem; }
+.coach-msg.user { align-items: flex-end; }
+.coach-bubble {
+  max-width: 92%; padding: 0.6rem 0.8rem; border-radius: var(--radius-md);
+  font-size: 0.9rem; line-height: 1.6; overflow-wrap: anywhere;
+  background: var(--color-surface-alt); border: 1px solid var(--color-border);
+}
+.coach-msg.user .coach-bubble { background: var(--color-primary); color: #fff; border-color: transparent; }
+.coach-bubble p + p, .coach-bubble ul, .coach-bubble ol, .coach-bubble h4 { margin-top: 0.4rem; }
+.coach-bubble ul, .coach-bubble ol { padding-left: 1.2rem; }
+.coach-bubble h4 { font-size: 0.92rem; }
+.coach-bubble code { font-family: var(--font-mono); font-size: 0.82em; background: rgba(99,102,241,0.08); padding: 0 0.25em; border-radius: 4px; }
+.coach-bubble sup a { color: var(--color-primary); text-decoration: none; font-weight: 600; margin-left: 1px; }
+.coach-bubble.thinking { color: var(--color-text-muted); }
+.coach-bubble.thinking span { animation: coach-dot 1.2s infinite; }
+.coach-bubble.thinking span:nth-child(2) { animation-delay: 0.2s; }
+.coach-bubble.thinking span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes coach-dot { 0%, 80%, 100% { opacity: 0.2; } 40% { opacity: 1; } }
+
+.coach-sources { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.78rem; max-width: 92%; }
+.coach-sources a { color: var(--color-text-muted); text-decoration: none; }
+.coach-sources a:hover { color: var(--color-primary); text-decoration: underline; }
+.coach-scripts { display: flex; flex-direction: column; gap: 0.35rem; max-width: 92%; }
+.coach-script {
+  text-align: left; padding: 0.5rem 0.7rem; cursor: pointer; font: 0.85rem var(--font-sans);
+  border: 1px solid var(--color-primary); border-radius: var(--radius-sm);
+  background: var(--color-surface); color: var(--color-primary);
+}
+.coach-script span { display: block; color: var(--color-text-muted); font-size: 0.75rem; margin-top: 0.1rem; }
+.coach-script:hover { background: var(--color-primary-light); }
+.coach-trace { font-size: 0.76rem; color: var(--color-text-muted); max-width: 92%; }
+.coach-trace summary { cursor: pointer; }
+.coach-trace ul { list-style: none; margin-top: 0.3rem; display: flex; flex-direction: column; gap: 0.15rem; }
+.coach-trace li span { color: var(--color-text-light); }
+.coach-trace li.fail { color: var(--color-danger); }
+.coach-trace li.meta { color: var(--color-text-light); }
+
+.coach-quick { display: flex; flex-wrap: wrap; gap: 0.4rem; padding: 0 1.1rem 0.6rem; }
+.coach-quick button {
+  padding: 0.35rem 0.65rem; border-radius: 999px; cursor: pointer; font: 0.8rem var(--font-sans);
+  border: 1px solid var(--color-border-dark); background: var(--color-surface); color: var(--color-text);
+}
+.coach-quick button:hover { border-color: var(--color-primary); color: var(--color-primary); }
+.coach-input-row { display: flex; gap: 0.5rem; padding: 0.7rem 1.1rem; border-top: 1px solid var(--color-border); }
+.coach-input-row textarea {
+  flex: 1; resize: none; padding: 0.55rem 0.7rem; border: 1px solid var(--color-border-dark);
+  border-radius: var(--radius-sm); font: 0.9rem var(--font-sans);
+}
+.coach-foot {
+  display: flex; align-items: center; gap: 0.8rem; padding: 0 1.1rem 0.8rem;
+  font-size: 0.78rem; color: var(--color-text-muted);
+}
+.coach-foot span { flex: 1; }
+.coach-link { border: none; background: none; cursor: pointer; color: var(--color-text-muted); font: inherit; text-decoration: underline; }
+.coach-saved-note {
+  margin-bottom: 0.8rem; padding: 0.6rem 0.8rem; border-radius: var(--radius-sm);
+  background: var(--color-success-light); color: #065f46; font-size: 0.88rem;
+}
+
+@media (max-width: 600px) {
+  .coach-fab { right: 16px; bottom: 16px; }
+  .coach-fab-text { display: none; }
+  .coach-head, .coach-messages, .coach-input-row, .coach-login { padding-left: 16px; padding-right: 16px; }
+}
+.coach-sources-label { color: var(--color-text-light); font-size: 0.74rem; }
