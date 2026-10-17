@@ -1,189 +1,148 @@
-# TicketCoach — 阿里云客服培训陪练系统
+# TicketCoach
 
-> 面向【阿里云（Alibaba Cloud）客服/技术支持】：把真实（脏）工单经多步 LLM 流水线转成培训剧本，再让你与 AI 扮演的客户实战对练并自动评分。
+**A practice gym for cloud support agents.** New Alibaba Cloud support hires practice on realistic angry-customer tickets, get scored, and then ask an AI coach that has read the official help docs and remembers every session they've done.
 
----
+[Live demo](https://ticketcoach-779591146096.us-central1.run.app) · [中文说明](docs/README.zh.md)
 
-## 项目简介
+```
+generate ticket → extract training script → QA review → live roleplay → scored feedback
+                                                                           │
+                                     AI coach ◀── remembers scores & weak spots
+                                        │
+                     official docs (RAG) · practice-script library · notes
+```
 
-TicketCoach 是一个基于大语言模型的客服培训辅助工具，构成「生成 → 对练 → 评分」完整闭环：
+## What it does
 
-1. **Step 1 — 工单生成**：模拟真实脏数据客服工单（口语化、有错别字、情绪波动）
-2. **Step 2 — 剧本提取**：将工单结构化为标准培训角色扮演剧本
-3. **Step 3 — 质量审核**：自动评分并给出改进建议
-4. **实战对练**：你扮演客服打字，AI 用剧本的 `actor_prompt` 实时扮演该难缠客户，多轮对话
-5. **对练评分**：对练结束后，按剧本的 `scoring_criteria` 给你的表现逐维度打分 + 点评
+| Feature | What a trainee sees | How it works |
+|---|---|---|
+| Script generation | A messy, realistic ticket becomes a roleplay script with scoring criteria | 3-step LLM pipeline with a quality loop (regenerate if QA < 60) |
+| Live roleplay | Chat with an AI customer who gets angrier or calmer depending on you | Token streaming; the persona comes from the script's `actor_prompt` |
+| Scoring | Per-dimension scores, what went well, missed challenge points | Schema-validated LLM evaluation, stored in the trainee's memory |
+| **AI coach** | "How do I troubleshoot SSH timeouts?" gets an answer with doc citations. "What am I weak at?" pulls their own history. "Give me a hard one" returns practice buttons. | Tool-calling agent over hybrid RAG, a live doc fetcher, SQLite memory, and the script library |
+| Real-ticket import | Teams paste or upload real tickets (JSON/JSONL/CSV/text) and export scripts | Normalization prompt that refuses to invent missing fields |
 
-### API 一览
+## Architecture
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | `/api/generate` | 跑三步流水线，返回 `{ticket, script, review}` |
-| POST | `/api/batch?n=N` | 批量生成 N 条 + 统计 |
-| POST | `/api/chat` | 对练一轮：传 `actor_prompt` + 对话历史，返回客户下一句 |
-| POST | `/api/evaluate` | 传 `script` + 对练记录，按评分维度给客服打分 |
-| POST | `/api/script-from-ticket` | 导入真实工单(粘贴/结构化)→ 生成剧本(+质检) |
-| POST | `/api/batch-scripts` | 上传文件(JSON/JSONL/CSV/文本)批量生成剧本，导出用 |
-| GET  | `/api/options` | 前端下拉框选项 |
-| GET  | `/api/health` | 健康检查 |
+```mermaid
+flowchart LR
+  UI[Browser<br/>vanilla JS] -->|X-Trainee-Token| API[FastAPI<br/>app/main.py]
+  API --> P[Pipeline<br/>core/pipeline.py]
+  API --> A[Coach agent<br/>core/agent.py]
+  A -->|search_help_docs| KB[(Hybrid KB<br/>BM25 + vectors<br/>580 chunks / 30 docs)]
+  A -->|read_help_doc| WEB[help.aliyun.com<br/>live fetch, allowlisted]
+  A -->|get_trainee_profile / remember| MEM[(SQLite memory)]
+  A -->|find_practice_scripts| LIB[(Script library)]
+  P & A --> GW[LLM gateway<br/>core/llm.py]
+  GW -->|fallback chain| Q[DashScope / Qwen]
+  GW -.->|account down| G[Gemini]
+```
 
-> `/api/script-from-ticket` 与 `/api/batch-scripts` 面向**已有真实工单**的团队：跳过 AI 造工单，直接用真实工单生成可导出的结构化剧本。
+**`core/llm.py`: every model call goes through one gateway**
+- **Fallback chain across providers.** `LLM_MODEL` comes first, then `LLM_FALLBACK_MODELS` (for example `qwen-plus,gemini:gemini-2.5-flash`). A retired model (404), exhausted quota (403), rate limit, timeout or 5xx moves on to the next entry. A whole-account failure (DashScope reports an overdue bill as `400 Arrearage`) skips every model on that account.
+- **Circuit breaker.** A model that returned 404/403 is skipped for 10 minutes. When every model is cooling down, the gateway sends a single probe ("half-open") instead of burning one failed call per model.
+- **Streams fall back only before the first token**, because switching models mid-sentence would garble the reply.
+- **Usage metrics.** Tokens, p50/p95 latency, errors, fallbacks and estimated cost (`LLM_PRICES`) per model and per step, served at `/api/metrics`.
+- **Chaos mode.** `LLM_CHAOS_RATE=0.3` fails the first attempt 30% of the time, to prove the fallbacks work.
 
-## 本地运行
+**`core/agent.py`: the coach is a bounded tool-calling loop**
+- Tool arguments are validated with pydantic. Tool errors go back to the model as results instead of crashing the request.
+- A step budget (6) ends with one forced call with tools disabled, so the trainee always gets an answer.
+- Tools never accept a trainee ID. Identity comes from the HMAC-signed login token, so a prompt-injected "show me user X's scores" has nothing to call.
+- Citations like `[D3]` that no tool returned this turn are stripped and logged.
+- `read_help_doc` only fetches URLs on allowlisted hosts that a search already returned. Fetched pages are treated as data, not instructions.
 
-### 1. 安装依赖
+**`core/kb.py`: retrieval is hand-rolled on purpose**
+- Real help-center pages are fetched, the article body is extracted, and chunks are split by heading with a "doc title > section" header.
+- BM25 uses CJK bigrams and cuts question words before bigramming (no segmenter dependency). Vector search is a numpy dot product. The two are merged with Reciprocal Rank Fusion.
+- If the embedding API is unavailable, search degrades to BM25 instead of failing. Each hit records which retrieval actually ran.
+
+**Structured output** (`core/schemas.py`): `json_mode` only guarantees parseable JSON. Pydantic schemas enforce the shape (required fields, role enums, score ranges). On a violation the validation errors go back to the model, and it repairs its own output once.
+
+## Quickstart
 
 ```bash
-pip install -r requirements.txt
+git clone https://github.com/xungirl/TicketCoach && cd TicketCoach
+python3 -m venv venv && venv/bin/pip install -r requirements.txt
+cp .env.example .env            # set LLM_API_KEY (DashScope); optionally GEMINI_API_KEY as a fallback
+venv/bin/python -m scripts.build_kb --embed-only   # chunks.json ships in the repo; this adds vectors
+venv/bin/uvicorn app.main:app --reload --port 8000
 ```
 
-### 2. 配置环境变量
+Open http://localhost:8000/app, then click **AI 教练** (AI coach) at the bottom right. Locally `ACCESS_PASSWORD` is unset, so any name logs in.
+
+Run the tests (no network, no API cost):
 
 ```bash
-cp .env.example .env
-# 编辑 .env 文件，填入你的 API Key
+venv/bin/python -m pytest -q
 ```
 
-`.env` 文件内容示例：
+### Configuration
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `LLM_API_KEY`, `LLM_BASE_URL` | DashScope | Primary OpenAI-compatible provider |
+| `LLM_MODEL` | `qwen-plus` | Primary model |
+| `LLM_FALLBACK_MODELS` | `qwen-plus,qwen-flash` (+ Gemini if keyed) | Fallback chain; `provider:model` crosses providers |
+| `GEMINI_API_KEY`, `GEMINI_MODEL` | (unset), `gemini-2.5-flash` | Second provider, for when the first account is down |
+| `LLM_STEP_MODELS` | `{}` | Per-step tiering, e.g. `{"review_script": "qwen-flash"}` |
+| `LLM_PRICES` | `{}` | `{"model": [in, out]}` CNY per 1M tokens, copied from the provider console |
+| `EMBED_MODEL`, `EMBED_DIM` | `text-embedding-v4`, `512` | Embeddings for the KB |
+| `ACCESS_PASSWORD` | (unset = open) | Gates paid endpoints; also the login code |
+| `AUTH_SECRET` | random per process | HMAC key for trainee tokens. **Set it in prod**, or tokens die on restart |
+| `GEN_DAILY_LIMIT`, `COACH_DAILY_LIMIT` | `0` (off), `50` | Daily caps: global pipeline runs / per-trainee coach turns |
+| `BATCH_CONCURRENCY` | `3` | Parallel items in batch endpoints |
+| `MEMORY_DB_PATH` | `data/memory.db` | SQLite file for trainee memory |
+| `LLM_CHAOS_RATE` | `0` | Failure injection (testing only) |
+
+## Evaluation
+
+Everything below can be re-run, and the numbers are the ones actually measured. Run outputs go to `evals/runs/` (gitignored).
+
+| Suite | Command | What it checks | Latest result |
+|---|---|---|---|
+| Unit tests | `pytest -q` | Fallbacks, breaker, chaos, schema repair, BM25/RRF, agent loop, memory, auth, HTTP gates, batch parallelism | 47 passed |
+| Retrieval | `python -m evals.retrieval_eval` | 30 hand-labeled trainee questions → right doc in top-k | BM25 only: **Hit@1 0.933, Hit@5 0.967, MRR 0.950**, p50 0.3 ms |
+| Coach agent | `python -m evals.coach_eval` | 15 cases: right tool, right doc cited, honest "not found", memory read/write, injection, wasted calls | *pending: needs a funded LLM account (see below)* |
+| Failure drill | `python -m evals.coach_eval --chaos 0.5` | Same suite with half of the first attempts failing | *pending* |
+| Pipeline | `python -m evals.run_eval` | 24 cases, hard checks + LLM judge + sabotage validation ([details](evals/README.md)) | 2026-06: 30/30 hard checks; fault injection dropped scores 93 → 30 |
+
+Things the evals caught:
+- One retrieval label was simply wrong: no doc in the corpus answers "how do I configure the origin host". The case was replaced, and the reason is recorded in the dataset.
+- Question words (怎么 / 应该 / "how" / "should") were dominating BM25. Cutting them raised MRR from 0.930 to 0.950. One paraphrase query ("ping得通" vs the doc's "能ping通") still misses with keywords alone, which is the gap the vector half of hybrid search is for.
+
+## Running it in production
+
+- **Deploy:** `gcloud run deploy ticketcoach --source . --allow-unauthenticated --timeout 900 --memory 512Mi --max-instances 1`, then set the env vars above.
+- **Logs:** every line is JSON with `request_id`, which Cloud Logging indexes. Useful filters:
+  - `jsonPayload.message="llm_call_failed"` shows which model failed and why (`failure`: account / model / transient)
+  - `jsonPayload.message="coach_turn"` shows tools used, steps, invalid citations, tokens and latency per coach turn
+  - `jsonPayload.request_id="<id from the X-Request-ID response header>"` shows one user's whole request
+- **Cost:** `GET /api/metrics` (needs the access token) returns tokens and estimated CNY per model and per step since the process started.
+
+## Known limitations
+
+- **Memory is not durable on Cloud Run.** SQLite lives on the container's disk, so it survives requests but not redeploys or instance restarts. The fix is a managed store (Firestore or Cloud SQL) behind `core/memory.Memory`'s small interface.
+- In-memory quotas and metrics assume a single instance (`--max-instances 1`).
+- The knowledge base is 30 hand-picked docs, not the whole help center. Rebuild it with `scripts/build_kb.py` after editing `data/kb/sources.json`.
+
+## Incident log
+
+- **2026-10:** the live demo went down. `qwen3-max` was retired (404), and the DashScope account then went into arrears (`400 Arrearage`), which blocks every model and the embedding API at once. That outage is why the gateway gained cross-provider fallback, account-level failure detection and the circuit breaker. A same-provider fallback chain would not have helped.
+
+## Project layout
 
 ```
-LLM_API_KEY=sk-xxxxxxxxxxxxxxxx
-LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-LLM_MODEL=qwen-plus
+app/main.py          FastAPI routes, auth gates, quotas, request-id middleware
+app/static/          vanilla JS frontend (app.js pipeline + roleplay, coach.js agent drawer)
+core/llm.py          LLM gateway: fallback chain, breaker, metrics, chaos, streaming, embeddings
+core/pipeline.py     ticket → script → review pipeline, roleplay, evaluation
+core/agent.py        coach agent loop + tools
+core/kb.py           article extraction, chunking, BM25, vector search, RRF
+core/memory.py       SQLite trainee memory + profile analytics
+core/auth.py         HMAC trainee tokens
+core/schemas.py      pydantic output contracts
+scripts/build_kb.py  fetch + chunk + embed the help docs
+evals/               pipeline, retrieval and coach evals
+tests/               unit + HTTP tests (offline)
 ```
-
-支持任何兼容 OpenAI API 格式的模型服务，例如：
-- 阿里云百炼（通义千问）：`https://dashscope.aliyuncs.com/compatible-mode/v1`
-- DeepSeek：`https://api.deepseek.com`
-
-### 3. 启动服务
-
-```bash
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-打开浏览器访问：[http://localhost:8000](http://localhost:8000)
-
-### 4. 命令行模式（仅流水线，不启动服务器）
-
-```bash
-python -m core.pipeline
-```
-
----
-
-## Google Cloud Run 部署（推荐，自带公网 HTTPS 链接）
-
-前提：已安装并登录 `gcloud`，项目已开通结算（billing）。本机无需安装 Docker（Cloud Run 在云端构建）。
-
-```bash
-# 1) 设定项目与区域
-gcloud config set project <你的项目ID>
-gcloud config set run/region us-central1
-
-# 2) 从源码构建并部署（首次会提示启用 Cloud Run / Cloud Build 等 API，输入 y）
-gcloud run deploy ticketcoach \
-  --source . \
-  --allow-unauthenticated \
-  --timeout 900 \
-  --memory 512Mi
-
-# 3) 配置环境变量（key 不进代码/git）
-gcloud run services update ticketcoach \
-  --set-env-vars LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1,LLM_MODEL=qwen3-max,LLM_API_KEY=<你的key>,ACCESS_PASSWORD=<你设的访问口令>,LLM_TIMEOUT=180
-```
-
-部署完成后终端会打印一个 `https://ticketcoach-xxxx.<区域>.run.app` 链接，发给朋友即可访问；
-首次打开调用接口时会要求输入你设置的 `ACCESS_PASSWORD`。
-
-> 安全提示：
-> - `ACCESS_PASSWORD` 防止别人用你的链接消耗 token；务必设置。
-> - 第 3 步把 key 写在命令行会留在 shell 历史里，介意的话改用 Cloud Console（Cloud Run → 服务 → 编辑并部署新修订版本 → 变量与密钥）手动填。
-> - `--timeout 900` 给慢模型和批量生成留足时间（qwen3-max 单条约 60s，批量 5 条约 5 分钟）。
-
-## Render 部署（备选）
-
-1. Fork 仓库 → 在 [Render](https://render.com) 新建 **Web Service**
-2. Build：`pip install -r requirements.txt`；Start：`uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-3. 环境变量配 `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` / `ACCESS_PASSWORD`
-
-## 架构图
-
-```
-用户浏览器
-    │
-    ▼
-┌─────────────────────────────────────────┐
-│           FastAPI (app/main.py)          │
-│  GET /          → 前端页面               │
-│  POST /api/generate → 单次生成           │
-│  POST /api/batch    → 批量生成           │
-└────────────────────┬────────────────────┘
-                     │
-                     ▼
-┌─────────────────────────────────────────┐
-│         Pipeline (core/pipeline.py)      │
-│                                          │
-│  ┌──────────┐  ┌──────────┐  ┌────────┐ │
-│  │ Step 1   │→ │ Step 2   │→ │Step 3  │ │
-│  │工单生成  │  │剧本提取  │  │质量审核│ │
-│  └──────────┘  └──────────┘  └────────┘ │
-│         ↑ 质量分 < 60 时重新生成 ↑       │
-└────────────────────┬────────────────────┘
-                     │
-                     ▼
-┌─────────────────────────────────────────┐
-│      LLM API (OpenAI-compatible)         │
-│  通义千问 / DeepSeek / 其他              │
-└─────────────────────────────────────────┘
-```
-
----
-
-## 截图
-
-### 1. 三步流水线主界面
-
-一键生成：左栏「原始工单」(AI 造的脏数据，含对话气泡/标签)、中栏「培训剧本」(七字段卡片 + `🎭 用这个剧本开始实战对练` 按钮)、右栏「质量评审」(综合分 + 五维评分条)。下图为「云安全 / SSL 证书」场景，质检 92 分。
-
-![三步流水线主界面](docs/screenshots/01-overview.png)
-
-### 2. 实战对练（你扮客服，AI 扮客户）
-
-点「开始对练」后，AI 用剧本的 `actor_prompt` 实时扮演难缠客户，你以客服身份打字应对；AI 情绪会随你的表现升级或缓和。下图客户因 SSL 证书部署后仍报「不安全」而情绪爆发、施压并要求别再让其逐项截图。
-
-![实战对练聊天](docs/screenshots/02-roleplay.png)
-
-### 3. 对练评分报告
-
-点「结束并评分」，模型按剧本的 `scoring_criteria` 给你的表现逐维度打分，并给出 ✅做得好 / 🔧可改进 / ⚠️未接住的挑战点。下图综合 68 分，点评精准指出「信息索取过载」「共情偏流程化」等问题。
-
-![对练评分报告](docs/screenshots/03-evaluation.png)
-
-### 4. 生成结果示例
-
-另一条生成结果，展示工单对话、剧本字段与质检维度的完整布局。
-
-![生成结果示例](docs/screenshots/04-example.png)
-
----
-
-## 技术栈
-
-- **后端**：Python 3.10+, FastAPI, openai SDK
-- **前端**：原生 HTML/CSS/JS（无框架依赖）
-- **LLM**：任意 OpenAI-compatible API
-
-## 后续改进（企业级方向）
-
-当前是面向演示的"现场生成"版本。生产级要保证体验与成本，可往这些方向演进：
-
-- [x] **流式输出**：实战对练已改为流式（AI 回复逐字蹦出），感知延迟大幅下降。
-- [ ] **预生成 + 剧本库**：把"生成（慢、离线、异步）"和"使用（快、在线）"解耦——后台/夜间批量生成剧本入库，用户从库里**秒取**，而非点一下等 60 秒。这是体验提升最大的一步。
-- [ ] **模型分级**：简单步骤用更快更便宜的模型（qwen-turbo/plus），只在关键步用 qwen-max，省一半时间与成本。
-- [ ] **上下文缓存（prompt caching）**：长 system prompt 重复使用，缓存前缀 → 更快更省。
-- [ ] **异步任务队列**：现场生成改为提交任务→轮询/通知 + 进度条，不阻塞界面。
-- [ ] **批量并行**：当前批量是顺序执行，可并行化，把 N×60s 压到接近 60s。
-- [ ] **基础设施**：常驻实例免冷启动（min-instances≥1）、向模型厂购专属吞吐、就近区域部署。
-- [ ] **可观测与限流**：接入日志/指标、按用户配额与速率限制、provider 侧消费上限告警。
-- [ ] **接入真实工单源**：把 Step 1（造工单）替换为对接真实工单系统（DB/工单 API），后续流程不变。
