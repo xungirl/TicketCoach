@@ -1,0 +1,30 @@
+{"id": "r01", "query": "客户说服务器ssh一直连不上，提示connection refused怎么排查", "relevant": ["SSH远程连接问题", "能ping通ECS实例但端口不通的排查方法", "无法连接Linux实例的排查方法"]}
+{"id": "r02", "query": "ping得通但是网站80端口打不开", "relevant": ["能ping通ECS实例但端口不通的排查方法"]}
+{"id": "r03", "query": "linux机器远程登录不上去 怎么一步步排查", "relevant": ["无法连接Linux实例的排查方法", "SSH远程连接问题"]}
+{"id": "r04", "query": "windows服务器特别卡，任务管理器cpu一直100%", "relevant": ["Windows实例CPU使用率较高问题的排查与处理"]}
+{"id": "r05", "query": "服务器内存老是被占满 free看没剩多少", "relevant": ["Linux实例内存使用率较高问题的排查与处理"]}
+{"id": "r06", "query": "OSS上传文件报AccessDenied 403", "relevant": ["HTTP 403 错误"]}
+{"id": "r07", "query": "用子账号访问bucket没权限被拒绝", "relevant": ["HTTP 403 错误"]}
+{"id": "r08", "query": "数据库连不上 是不是白名单没加", "relevant": ["RDS连接失败的排查方法", "解决无法连接实例问题"]}
+{"id": "r09", "query": "MySQL报too many connections连接数满了", "relevant": ["解决无法连接实例问题", "RDS连接失败的排查方法"]}
+{"id": "r10", "query": "改了解析记录好几个小时了还是不生效", "relevant": ["域名解析为什么不生效？", "解析不生效/无法访问网站FAQ"]}
+{"id": "r11", "query": "域名whois显示serverHold是什么意思", "relevant": ["域名解析为什么不生效？"]}
+{"id": "r12", "query": "备案又被管局退回来了，说网站内容和备案信息不符", "relevant": ["备案驳回FAQ"]}
+{"id": "r13", "query": "备案负责人不是法人可以吗 被驳回了", "relevant": ["备案驳回FAQ"]}
+{"id": "r14", "query": "账户没钱了，ECS会不会马上被删掉，数据还在吗", "relevant": ["ECS欠费说明"]}
+{"id": "r15", "query": "按带宽计费想改成按流量计费", "relevant": ["转换固定公网IP的带宽计费方式"]}
+{"id": "r16", "query": "想看公网IP每秒的带宽监控数据 找流量突增原因", "relevant": ["弹性公网IP日志"]}
+{"id": "r17", "query": "CDN访问报502 bad gateway", "relevant": ["访问CDN加速域名返回5XX错误的常见问题", "CDN回源时网站出现5xx报错的排查方法"]}
+{"id": "r18", "query": "CDN跨域报错，源站的Access-Control-Allow-Origin响应头要怎么检查", "relevant": ["回源常见问题"], "note": "replaced 回源host query: no doc in the corpus answers it (label error found by eval)"}
+{"id": "r19", "query": "网站被打了，IP进黑洞了，多久能恢复", "relevant": ["WAF被黑洞怎么解决", "DDoS原生防护基本概念", "黑洞解封"]}
+{"id": "r20", "query": "高防一天能手动解封几次", "relevant": ["黑洞解封"]}
+{"id": "r21", "query": "装了https证书浏览器还是提示不安全", "relevant": ["根据浏览器错误提示解决证书部署问题", "SSL证书部署故障排查指南"]}
+{"id": "r22", "query": "证书续费以后网站还在用旧证书", "relevant": ["SSL证书部署故障排查指南", "根据浏览器错误提示解决证书部署问题"]}
+{"id": "r23", "query": "短信签名审核没通过 说签名含义模糊", "relevant": ["短信签名规范", "审核失败的处理建议"]}
+{"id": "r24", "query": "短信模板被驳回了怎么改", "relevant": ["审核失败的处理建议"]}
+{"id": "r25", "query": "买错配置了想退款，五天无理由能退吗", "relevant": ["退订规则", "退订常见问题"]}
+{"id": "r26", "query": "退订以后钱退到哪里 多久到账", "relevant": ["退订常见问题", "退订规则"]}
+{"id": "r27", "query": "k8s节点状态NotReady", "relevant": ["节点异常问题排查", "节点诊断"]}
+{"id": "r28", "query": "集群里有台机器pod一直调度不上去 节点磁盘满了", "relevant": ["节点异常问题排查", "节点诊断"]}
+{"id": "r29", "query": "不小心把云盘里的数据删了还能找回来吗", "relevant": ["数据保护与恢复常见问题", "使用快照回滚云盘"]}
+{"id": "r30", "query": "用快照回滚之前要注意什么，会不会丢数据", "relevant": ["使用快照回滚云盘", "数据保护与恢复常见问题"]}

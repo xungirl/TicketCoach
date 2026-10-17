@@ -16,3 +16,4 @@ docs/钉钉文档.md
 
 # eval harness outputs (traces may contain prompts)
 evals/runs/
+data/kb/cache/
