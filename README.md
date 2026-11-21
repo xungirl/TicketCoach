@@ -2,7 +2,7 @@
 
 **A practice gym for cloud support agents.** New Alibaba Cloud support hires practice on realistic angry-customer tickets, get scored, and then ask an AI coach that has read the official help docs and remembers every session they've done.
 
-[Live demo](https://ticketcoach-779591146096.us-central1.run.app) · [中文说明](docs/README.zh.md)
+[Project report](https://xungirl.com/ticketcoach/) · [中文说明](docs/README.zh.md) · *The hosted demo is down since 2026-10: the model it used was retired and the provider account lapsed (see Timeline).*
 
 ```
 generate ticket → extract training script → QA review → live roleplay → scored feedback
